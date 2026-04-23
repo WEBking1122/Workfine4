@@ -1,0 +1,68 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
+
+  --color-primary: #6366F1;
+  --color-primary-dark: #4F46E5;
+  --color-accent: #A78BFA;
+  --color-bg-dark: #0F172A;
+  --color-surface-dark: #1E293B;
+  --color-border-dark: #334155;
+  --color-muted-text: #94A3B8;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #F43F5E;
+  --color-info: #38BDF8;
+
+  --radius-xl: 1rem;
+  --radius-lg: 0.75rem;
+  --radius-md: 0.5rem;
+  --radius-sm: 0.25rem;
+}
+
+@layer base {
+  body {
+    @apply font-sans bg-[#0F172A] text-[#F1F5F9] antialiased selection:bg-primary/30;
+  }
+  
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 10px;
+  }
+}
+
+@layer components {
+  .primary-gradient {
+    background: linear-gradient(135deg, #6366F1 0%, #A78BFA 100%);
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg transition-all active:scale-[0.98] shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .card {
+    @apply bg-slate-800/60 border border-slate-700/50 rounded-xl shadow-sm hover:border-slate-500 transition-colors;
+  }
+  
+  .badge {
+    @apply text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider;
+  }
+
+  .input-field {
+    @apply w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-colors text-white placeholder:text-slate-500;
+  }
+
+  .mono {
+    @apply font-mono;
+  }
+}
+

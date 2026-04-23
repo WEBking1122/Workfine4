@@ -1,0 +1,283 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useRef } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { 
+  X, 
+  Calendar, 
+  Flag, 
+  User as UserIcon, 
+  AlignLeft, 
+  Paperclip,
+  CheckCircle2,
+  Trash2,
+  Send,
+  Loader2,
+  Plus
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Task, Attachment, TaskPriority, TaskStatus } from '../../types';
+import { taskService } from '../../lib/firebase/tasks';
+import { storageService } from '../../lib/firebase/storage';
+import { useAuth } from '../../context/AuthContext';
+import { cn, formatDate } from '../../lib/utils';
+
+interface TaskModalProps {
+  task?: Task | null;
+  projectId: string;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function TaskModal({ task, projectId, isOpen, onClose }: TaskModalProps) {
+  const { user } = useAuth();
+  const [title, setTitle] = useState(task?.title || '');
+  const [description, setDescription] = useState(task?.description || '');
+  const [priority, setPriority] = useState<TaskPriority>(task?.priority || 'Medium');
+  const [status, setStatus] = useState<TaskStatus>(task?.status || 'To Do');
+  const [dueDate, setDueDate] = useState(task?.dueDate || '');
+  const [isUploading, setIsUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSave = async () => {
+    if (!title.trim() || !user) return;
+    setSaving(true);
+    try {
+      if (task) {
+        await taskService.updateTask(task.id, {
+          title,
+          description,
+          priority,
+          status,
+          dueDate
+        });
+      } else {
+        await taskService.createTask({
+          projectId,
+          workspaceId: 'ws1', // Simplified for demo
+          title,
+          description,
+          assigneeIds: [user.uid],
+          dueDate: dueDate || null,
+          priority,
+          status,
+          sectionId: status
+        });
+      }
+      onClose();
+    } catch (error) {
+      console.error('Error saving task', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user || !task) return;
+
+    setIsUploading(true);
+    try {
+      const attachment = await storageService.uploadFile(user.uid, projectId, task.id, file);
+      await taskService.updateTask(task.id, {
+        attachments: [...(task.attachments || []), attachment]
+      });
+    } catch (error) {
+      console.error('Upload failed', error);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const priorities: TaskPriority[] = ['Urgent', 'High', 'Medium', 'Low'];
+  const statuses: TaskStatus[] = ['To Do', 'In Progress', 'In Review', 'Done'];
+
+  return (
+    <Dialog.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] animate-in fade-in duration-300" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-blue-500/30 rounded-3xl shadow-2xl z-[110] focus:outline-none animate-in zoom-in-95 duration-300 overflow-hidden outline-none">
+          
+          <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-border-dark bg-slate-50/50 dark:bg-slate-800/20">
+            <div className="flex items-center gap-2">
+               <div className={cn(
+                  "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                  status === 'Done' ? "bg-success/10 text-success" : "bg-blue-500/10 text-blue-400"
+               )}>
+                 {task ? 'Edit Task' : 'New Task'}
+               </div>
+               <span className="text-slate-300">/</span>
+               <span className="text-xs font-semibold text-muted-text">Project Core</span>
+            </div>
+            <Dialog.Close className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors outline-none">
+              <X size={20} className="text-slate-500" />
+            </Dialog.Close>
+          </div>
+
+          <div className="p-8 space-y-8">
+            <div className="space-y-4">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Write a task title..."
+                className="w-full text-3xl font-bold bg-transparent border-none outline-none placeholder:text-slate-200 dark:placeholder:text-slate-700 tracking-tight dark:text-white"
+              />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                <div className="space-y-4">
+                   <div className="flex items-center gap-4">
+                     <div className="w-24 text-sm font-medium text-muted-text flex items-center gap-2">
+                       <UserIcon size={16} /> Assignee
+                     </div>
+                     <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl cursor-not-allowed">
+                        <div className="w-5 h-5 rounded-full bg-blue-600 text-[8px] flex items-center justify-center text-white font-bold">
+                          {user?.displayName?.[0]}
+                        </div>
+                        <span className="text-xs font-semibold dark:text-white">{user?.displayName}</span>
+                     </div>
+                   </div>
+
+                   <div className="flex items-center gap-4">
+                     <div className="w-24 text-sm font-medium text-muted-text flex items-center gap-2">
+                       <Calendar size={16} /> Due Date
+                     </div>
+                     <input 
+                       type="date"
+                       value={dueDate}
+                       onChange={(e) => setDueDate(e.target.value)}
+                       className="bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-3 py-1.5 text-xs font-semibold dark:text-white outline-none cursor-pointer"
+                     />
+                   </div>
+                </div>
+
+                <div className="space-y-4">
+                   <div className="flex items-center gap-4">
+                     <div className="w-24 text-sm font-medium text-muted-text flex items-center gap-2">
+                       <Flag size={16} /> Priority
+                     </div>
+                     <select 
+                       value={priority}
+                       onChange={(e) => setPriority(e.target.value as TaskPriority)}
+                       className="bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-3 py-1.5 text-xs font-semibold dark:text-white outline-none cursor-pointer appearance-none min-w-[100px]"
+                     >
+                       {priorities.map(p => <option key={p} value={p}>{p}</option>)}
+                     </select>
+                   </div>
+
+                   <div className="flex items-center gap-4">
+                     <div className="w-24 text-sm font-medium text-muted-text flex items-center gap-2">
+                       <Loader2 size={16} /> Status
+                     </div>
+                     <select 
+                       value={status}
+                       onChange={(e) => setStatus(e.target.value as TaskStatus)}
+                       className="bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-3 py-1.5 text-xs font-semibold dark:text-white outline-none cursor-pointer appearance-none min-w-[100px]"
+                     >
+                       {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                     </select>
+                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-white">
+                <AlignLeft size={18} />
+                Description
+              </div>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Add more details about this task..."
+                className="w-full h-32 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 dark:text-white transition-all resize-none"
+              />
+            </div>
+
+            {task && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-white">
+                    <Paperclip size={18} />
+                    Attachments
+                  </div>
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 text-xs font-bold text-blue-400 hover:bg-blue-500/5 px-3 py-1 rounded-lg transition-colors disabled:opacity-50"
+                    disabled={isUploading}
+                  >
+                    {isUploading ? <Loader2 className="animate-spin" size={14} /> : <Plus size={14} />}
+                    Upload File
+                  </button>
+                  <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  {task.attachments?.map((file, idx) => (
+                    <a 
+                      key={idx}
+                      href={file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-3 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-border-dark rounded-xl flex items-center gap-3 hover:border-primary/30 transition-all group"
+                    >
+                      <div className="w-10 h-10 bg-white dark:bg-slate-800 rounded-lg flex items-center justify-center text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                        <Paperclip size={18} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{file.name}</p>
+                        <p className="text-[10px] text-muted-text">{(file.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                    </a>
+                  ))}
+                  {(!task.attachments || task.attachments.length === 0) && (
+                    <div className="col-span-2 py-8 text-center border-2 border-dashed border-slate-100 dark:border-border-dark rounded-2xl text-xs text-muted-text">
+                      No documents attached yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="p-6 bg-slate-50 dark:bg-slate-800/20 border-t border-slate-100 dark:border-border-dark flex items-center justify-between">
+            <button
+               onClick={() => task && taskService.deleteTask(task.id).then(() => onClose())} 
+               className="p-2 text-slate-400 hover:text-danger hover:bg-danger/5 rounded-xl transition-all"
+            >
+              <Trash2 size={20} />
+            </button>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={onClose}
+                className="px-6 py-2 text-sm font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSave}
+                disabled={saving || !title.trim()}
+                className="px-8 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 flex items-center gap-2"
+              >
+                {saving && <Loader2 className="animate-spin" size={16} />}
+                {task ? 'Update Task' : 'Create Task'}
+              </button>
+            </div>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function PlusIcon({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"></line>
+      <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>
+  );
+}

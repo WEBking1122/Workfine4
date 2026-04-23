@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and settings.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastActive": { "type": "string", "format": "date-time" },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "theme": { "type": "string", "enum": ["light", "dark"] },
+            "notifications": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A collection of tasks and members.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "color": { "type": "string" },
+        "members": {
+          "type": "object",
+          "properties": {
+            "uid": { "type": "string", "description": "Map of userId to role" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId", "workspaceId"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A specific unit of work.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "assigneeIds": { "type": "array", "items": { "type": "string" } },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "priority": { "type": "string", "enum": ["Urgent", "High", "Medium", "Low"] },
+        "status": { "type": "string", "enum": ["To Do", "In Progress", "In Review", "Done"] },
+        "sectionId": { "type": "string" },
+        "attachments": {
+          "type": "array",
+          "items": { $ref: "Attachment" }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "projectId", "workspaceId"]
+    },
+    "Attachment": {
+       "title": "Attachment",
+       "type": "object",
+       "properties": {
+         "name": { "type": "string" },
+         "url": { "type": "string" },
+         "size": { "type": "number" },
+         "type": { "type": "string" },
+         "uploadedAt": { "type": "string", "format": "date-time" },
+         "userId": { "type": "string" }
+       }
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "workspaces/{workspaceId}": {
+      "schema": { "title": "Workspace", "type": "object", "properties": { "name": { "type": "string" }, "ownerId": { "type": "string" } } },
+      "description": "User workspaces"
+    },
+    "projects/{projectId}": {
+      "schema": "Project",
+      "description": "Projects within workspaces"
+    },
+    "tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks belonging to projects"
+    }
+  }
+}
