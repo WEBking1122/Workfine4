@@ -22,11 +22,12 @@ export interface Project {
 }
 
 export interface NewProject {
-  name: string;
-  description: string;
-  color: string;
-  status?: string;
-  [key: string]: any;
+  name:         string;
+  description:  string;
+  color:        string;
+  status?:      string;
+  priority?:    string;
+  dueDate?:     string | null;
 }
 
 async function ensureUserDocExists(uid: string): Promise<void> {
@@ -50,15 +51,15 @@ export async function createProject(
     name:        data.name.trim(),
     description: data.description?.trim() ?? "",
     color:       data.color ?? "#6366f1",
-    status:      data.status ?? "active",
+    status:      data.status   ?? "active",
+    priority:    data.priority ?? "Medium",
+    dueDate:     data.dueDate  ?? null,
     uid,
-    createdAt: serverTimestamp(),
-    ...data
+    createdAt:   serverTimestamp(),
+    updatedAt:   serverTimestamp(),
   });
 
-  console.log(
-    "[Projects] ✅ Saved: users/" + uid + "/projects/" + docRef.id
-  );
+  console.log("[Projects] ✅ Saved: users/" + uid + "/projects/" + docRef.id);
   return docRef.id;
 }
 

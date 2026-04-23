@@ -109,15 +109,23 @@ const ProjectPage = () => {
   ];
 
   // ── Filtered tasks ─────────────────────────────────────────────────────
+  const assignedToMe = (task: Task): boolean => {
+    if (!user?.email) return false;
+    const assignee = (task.assignee ?? "").toLowerCase().trim();
+    const myEmail  = user.email.toLowerCase().trim();
+    return assignee === myEmail;
+  };
+
   const filtered = useMemo(() => {
     let list = [...tasks];
-    if (filter === "mine")   list = list.filter(t => t.assignee === user?.displayName);
+    if (filter === "mine")   list = list.filter(assignedToMe);
     if (filter === "high")   list = list.filter(t => t.priority === "High");
     if (search.trim())       list = list.filter(t =>
-      t.title.toLowerCase().includes(search.toLowerCase())
+      t.title.toLowerCase().includes(search.toLowerCase()) ||
+      t.description?.toLowerCase().includes(search.toLowerCase())
     );
     return list;
-  }, [tasks, filter, search, user]);
+  }, [tasks, filter, search, user?.email]);
 
   // ── Save task ──────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -131,6 +139,7 @@ const ProjectPage = () => {
       } else {
         await addDoc(collection(db, "users", user.uid, "tasks"), {
           ...form,
+          assignee: form.assignee.trim(),
           projectId: id,
           ownerId:   user.uid,
           createdAt: serverTimestamp(),
@@ -296,15 +305,19 @@ const ProjectPage = () => {
         <div className="flex items-center justify-between gap-3 mb-4">
           {/* Filters */}
           <div className="flex items-center gap-2">
-            {(["all","mine","high"] as const).map(f => (
-              <button key={f} onClick={() => setFilter(f)}
+            {[
+              { id: "all", label: `All Tasks (${tasks.length})` },
+              { id: "mine", label: `Assigned to Me (${tasks.filter(assignedToMe).length})` },
+              { id: "high", label: `Priority: High (${tasks.filter(t => t.priority === "High").length})` }
+            ].map(f => (
+              <button key={f.id} onClick={() => setFilter(f.id as any)}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium
-                                  transition-colors capitalize ${
-                        filter === f
+                                  transition-colors ${
+                        filter === f.id
                           ? "bg-blue-600 text-white"
                           : "bg-white border border-gray-200 text-gray-500 hover:bg-gray-50"
                       }`}>
-                {f === "all" ? "All Tasks" : f === "mine" ? "Assigned to Me" : "Priority: High"}
+                {f.label}
               </button>
             ))}
           </div>
@@ -404,17 +417,26 @@ const ProjectPage = () => {
 
                   {/* Assignee */}
                   <div className="flex items-center gap-1.5">
-                    {task.assignee ? (
+                    {task.assignee && task.assignee !== "Unassigned" ? (
                       <>
-                        <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
-                          {task.assignee[0].toUpperCase()}
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0
+                                      ${assignedToMe(task) ? "bg-violet-500" : "bg-blue-500"}`}
+                        >
+                          {task.assignee.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-xs text-gray-600 truncate">
-                          {task.assignee}
+                        <span className="text-xs text-gray-600 truncate max-w-[140px]">
+                          {assignedToMe(task)
+                            ? (
+                              <span className="text-violet-600 font-medium">
+                                {user?.displayName ?? user?.email ?? "You"}
+                              </span>
+                            )
+                            : task.assignee}
                         </span>
                       </>
                     ) : (
-                      <span className="text-xs text-gray-300">—</span>
+                      <span className="text-xs text-gray-400 italic">Unassigned</span>
                     )}
                   </div>
 

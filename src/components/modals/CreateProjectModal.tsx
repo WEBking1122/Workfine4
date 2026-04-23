@@ -55,8 +55,6 @@ export default function CreateProjectModal({ isOpen, onClose }: CreateProjectMod
         status: "active",
         priority: "Medium",
         dueDate: "",
-        members: [],
-        tags: [],
       });
 
       // Reset form and close on success

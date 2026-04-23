@@ -12,6 +12,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
+import CreateProjectModal from "../components/CreateProjectModal";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const toMs = (v: any): number => {
@@ -42,7 +43,7 @@ const DashboardPage = () => {
 
   // ── Modals ──────────────────────────────────────────────────────────────
   const [showTask,    setShowTask]    = useState(false);
-  const [showProject, setShowProject] = useState(false);
+  const [showCreateProject, setShowCreateProject] = useState(false);
   const [taskForm,    setTaskForm]    = useState(emptyTask());
   const [pName,       setPName]       = useState("");
   const [pColor,      setPColor]      = useState("#3b82f6");
@@ -135,21 +136,6 @@ const DashboardPage = () => {
     } finally { setSaving(false); }
   };
 
-  // ── Save project ───────────────────────────────────────────────────────────
-  const handleSaveProject = async () => {
-    if (!user?.uid || !pName.trim()) return;
-    setSaving(true);
-    try {
-      await createProject(user.uid, {
-        name: pName, color: pColor, description: pDesc,
-        priority: pPriority, dueDate: pDue, status: pStatus,
-        tags: [], members: [],
-      });
-      setPName(""); setPColor("#3b82f6"); setPDesc("");
-      setPPriority("Medium"); setPDue(""); setPStatus("active");
-      setShowProject(false);
-    } finally { setSaving(false); }
-  };
 
   const displayName = user?.displayName ?? user?.email?.split("@")[0] ?? "User";
 
@@ -175,7 +161,8 @@ const DashboardPage = () => {
             </p>
           </div>
           <button
-            onClick={() => setShowProject(true)}
+            type="button"
+            onClick={() => setShowCreateProject(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors shadow-sm"
           >
             + Create Project
@@ -267,7 +254,7 @@ const DashboardPage = () => {
               <div className="h-[180px] flex flex-col items-center justify-center gap-2">
                 <p className="text-2xl">📁</p>
                 <p className="text-xs text-gray-400">No projects yet.</p>
-                <button onClick={() => setShowProject(true)}
+                <button type="button" onClick={() => setShowCreateProject(true)}
                         className="text-xs text-blue-600 hover:underline">
                   + Create your first project
                 </button>
@@ -492,7 +479,7 @@ const DashboardPage = () => {
               <h3 className="text-sm font-semibold text-gray-800">
                 My Projects
               </h3>
-              <button onClick={() => setShowProject(true)}
+              <button type="button" onClick={() => setShowCreateProject(true)}
                       className="text-xs text-blue-600 hover:underline">
                 + New Project
               </button>
@@ -742,70 +729,8 @@ const DashboardPage = () => {
       )}
 
       {/* ══ CREATE PROJECT MODAL ══════════════════════════════════════════ */}
-      {showProject && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">New Project</h2>
-              <button onClick={() => setShowProject(false)}
-                      className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
-            </div>
-            <div className="space-y-3">
-              <input type="text" placeholder="Project name *"
-                value={pName} onChange={e => setPName(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-              />
-              <textarea placeholder="Description (optional)"
-                value={pDesc} onChange={e => setPDesc(e.target.value)}
-                rows={2}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <select value={pStatus} onChange={e => setPStatus(e.target.value)}
-                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="active">🟢 Active</option>
-                  <option value="planning">🔵 Planning</option>
-                  <option value="on-hold">🟡 On Hold</option>
-                  <option value="completed">✅ Completed</option>
-                </select>
-                <select value={pPriority} onChange={e => setPPriority(e.target.value)}
-                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="Low">🟢 Low</option>
-                  <option value="Medium">🟡 Medium</option>
-                  <option value="High">🔴 High</option>
-                </select>
-              </div>
-              <input type="date" value={pDue}
-                onChange={e => setPDue(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <div>
-                <p className="text-xs text-gray-500 mb-2">Color</p>
-                <div className="flex gap-2">
-                  {COLORS_P.map(c => (
-                    <button key={c} onClick={() => setPColor(c)}
-                            className={`w-7 h-7 rounded-full border-2 transition-all ${
-                              pColor === c ? "border-gray-800 scale-110" : "border-transparent"
-                            }`}
-                            style={{ backgroundColor: c }} />
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowProject(false)}
-                      className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">
-                Cancel
-              </button>
-              <button onClick={handleSaveProject}
-                      disabled={!pName.trim() || saving}
-                      className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                {saving ? "Creating..." : "Create Project"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showCreateProject && (
+        <CreateProjectModal onClose={() => setShowCreateProject(false)} />
       )}
     </div>
   );

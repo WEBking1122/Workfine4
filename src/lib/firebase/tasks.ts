@@ -178,3 +178,35 @@ export function subscribeToProjectTasks(
     callback(tasks);
   });
 }
+
+export async function createTask(
+  uid: string,
+  data: {
+    title: string;
+    description?: string;
+    status: string;
+    priority: string;
+    dueDate?: string;
+    assignee?: string;
+    projectId?: string;
+  }
+): Promise<string> {
+  if (!uid) throw new Error("No authenticated user");
+
+  const ref    = collection(db, "users", uid, "tasks");
+  const docRef = await addDoc(ref, {
+    title:       data.title.trim(),
+    description: data.description?.trim() ?? "",
+    status:      data.status ?? "To Do",
+    priority:    data.priority ?? "Medium",
+    dueDate:     data.dueDate ?? null,
+    assignee:    data.assignee?.trim() ?? "Unassigned",
+    projectId:   data.projectId ?? null,
+    userId:      uid,
+    createdAt:   new Date().toISOString(), // Use ISO string to match existing taskService format or serverTimestamp()
+    updatedAt:   new Date().toISOString(),
+  });
+
+  console.log("[Tasks] ✅ Task saved:", docRef.id);
+  return docRef.id;
+}
