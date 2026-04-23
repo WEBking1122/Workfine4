@@ -1,79 +1,113 @@
 import {
-  addDoc, collection, serverTimestamp,
-  onSnapshot, doc, deleteDoc, updateDoc,
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  setDoc,
+  onSnapshot,
+  serverTimestamp,
+  Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./config";
 
-// ALL functions scope to /users/{uid}/projects — never a root collection
-const projectsRef = (uid: string) =>
-  collection(db, "users", uid, "projects");
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  status: string;
+  uid: string;
+  createdAt: unknown;
+  [key: string]: any;
+}
 
-const projectDocRef = (uid: string, projectId: string) =>
-  doc(db, "users", uid, "projects", projectId);
+export interface NewProject {
+  name: string;
+  description: string;
+  color: string;
+  status?: string;
+  [key: string]: any;
+}
 
-export const createProject = async (
+async function ensureUserDocExists(uid: string): Promise<void> {
+  await setDoc(
+    doc(db, "users", uid),
+    { uid, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+export async function createProject(
   uid: string,
-  data: {
-    name:        string;
-    color:       string;
-    description: string;
-    status:      string;
-    priority:    string;
-    dueDate:     string;
-    members:     string[];
-    tags:        string[];
-  }
-): Promise<string> => {
-  const ref = await addDoc(collection(db, "users", uid, "projects"), {
-    name:               data.name.trim(),
-    color:              data.color,
-    description:        data.description.trim(),
-    status:             data.status,
-    priority:           data.priority,
-    dueDate:            data.dueDate,
-    members:            data.members,
-    tags:               data.tags,
-    taskCount:          0,
-    completedTaskCount: 0,
-    progress:           0,
-    ownerId:            uid,
-    createdAt:          serverTimestamp(),
-    updatedAt:          serverTimestamp(),
-  });
-  console.log("[Firebase] ✅ Project created: users/" + uid + "/projects/" + ref.id);
-  return ref.id;
-};
+  data: NewProject
+): Promise<string> {
+  if (!uid) throw new Error("No authenticated user");
 
-export const updateProject = async (
-  uid: string,
-  projectId: string,
-  data: Partial<{ name: string; color: string; description: string; status: string }>
-): Promise<void> => {
-  await updateDoc(projectDocRef(uid, projectId), {
-    ...data,
-    updatedAt: serverTimestamp(),
-  });
-};
+  await ensureUserDocExists(uid);
 
-export const deleteProject = async (
+  const ref    = collection(db, "users", uid, "projects");
+  const docRef = await addDoc(ref, {
+    name:        data.name.trim(),
+    description: data.description?.trim() ?? "",
+    color:       data.color ?? "#6366f1",
+    status:      data.status ?? "active",
+    uid,
+    createdAt: serverTimestamp(),
+    ...data
+  });
+
+  console.log(
+    "[Projects] ✅ Saved: users/" + uid + "/projects/" + docRef.id
+  );
+  return docRef.id;
+}
+
+export async function deleteProject(
   uid: string,
   projectId: string
-): Promise<void> => {
-  await deleteDoc(projectDocRef(uid, projectId));
-  console.log("[Firebase] 🗑 Project deleted:", projectId);
-};
+): Promise<void> {
+  if (!uid || !projectId) return;
+  await deleteDoc(doc(db, "users", uid, "projects", projectId));
+  console.log("[Projects] 🗑️ Deleted:", projectId);
+}
 
-export const subscribeToProjects = (
+export function subscribeToProjects(
   uid: string,
-  cb: (projects: any[]) => void
-): (() => void) => {
+  callback: (projects: Project[]) => void
+): Unsubscribe {
+  if (!uid) {
+    callback([]);
+    return () => {};
+  }
+
+  console.log("[Projects] 👂 Attaching listener for uid:", uid);
+
   return onSnapshot(
-    projectsRef(uid),
-    (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      console.log("[Firebase] projects synced:", data.length, "for user:", uid);
-      cb(data);
+    collection(db, "users", uid, "projects"),
+    (snapshot) => {
+      const list: Project[] = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<Project, "id">),
+      } as Project));
+
+      list.sort((a, b) => {
+        const aT =
+          a.createdAt && typeof a.createdAt === "object" &&
+          "seconds" in (a.createdAt as object)
+            ? (a.createdAt as { seconds: number }).seconds : 0;
+        const bT =
+          b.createdAt && typeof b.createdAt === "object" &&
+          "seconds" in (b.createdAt as object)
+            ? (b.createdAt as { seconds: number }).seconds : 0;
+        return bT - aT;
+      });
+
+      console.log("[Projects] 📦 Snapshot received — count:", list.length);
+      callback(list);
     },
-    (err) => console.error("[Firebase] projects listener error:", err.code)
+    (err) => {
+      console.error("[Projects] ❌ Listener error:", err.message);
+      callback([]);
+    }
   );
-};
+}

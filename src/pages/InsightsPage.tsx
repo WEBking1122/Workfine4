@@ -24,7 +24,16 @@ export default function InsightsPage() {
     tasks,
     teamMembers,
     loading,
+    projects,
   } = useAppData();
+
+  // Count only projects with status "active" — updates in real-time
+  const activeProjectsCount = projects.filter(
+    (p) => p.status === "active"
+  ).length;
+
+  // Total projects count for reference
+  const totalProjectsCount = projects.length;
 
   const [timeRange, setTimeRange] = useState<"7d" | "30d" | "90d" | "all">("7d");
   const [pageReady, setPageReady] = useState(false);
@@ -296,14 +305,48 @@ export default function InsightsPage() {
             )}
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-gray-500 font-medium">Active Projects</p>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-50 text-purple-500">
-                <FolderOpen className="w-4 h-4 text-purple-500" />
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100
+                          flex flex-col gap-2 relative overflow-hidden">
+            {/* Icon */}
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-500">Active Projects</p>
+              <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center
+                              justify-center">
+                <svg className="w-4 h-4 text-purple-500" fill="none"
+                     viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round"
+                    d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2
+                       2H5a2 2 0 01-2-2V7z" />
+                </svg>
               </div>
             </div>
-            <p className="text-2xl font-bold text-gray-900">—</p>
+
+            {/* Live Count */}
+            <p className="text-3xl font-bold text-gray-900">
+              {activeProjectsCount}
+            </p>
+
+            {/* Subtitle showing total */}
+            <p className="text-xs text-gray-400">
+              {totalProjectsCount === 0
+                ? "No projects yet"
+                : `${activeProjectsCount} of ${totalProjectsCount} total project${
+                    totalProjectsCount !== 1 ? "s" : ""
+                  } active`}
+            </p>
+
+            {/* Live indicator dot */}
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full
+                                 rounded-full bg-purple-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2
+                                 bg-purple-500" />
+              </span>
+              <span className="text-xs text-purple-500 font-medium">
+                Live sync
+              </span>
+            </div>
           </div>
         </div>
 

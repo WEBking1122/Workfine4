@@ -3,122 +3,187 @@ import React, {
   useContext,
   useEffect,
   useState,
+  useRef,
+  ReactNode,
 } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { onSnapshot, collection } from "firebase/firestore";
 import { db } from "../lib/firebase/config";
 import { useAuth } from "./AuthContext";
-import { subscribeToProjects } from "../lib/firebase/projects";
+import { subscribeToProjects, Project } from "../lib/firebase/projects";
+
+interface Task {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate?: string;
+  createdAt?: unknown;
+  [key: string]: unknown;
+}
+
+interface TeamMember {
+  id: string;
+  name: string;
+  role: string;
+  email?: string;
+  [key: string]: unknown;
+}
+
+interface Note {
+  id: string;
+  content: string;
+  createdAt?: unknown;
+  [key: string]: unknown;
+}
 
 interface AppDataContextType {
-  projects:    any[];
-  tasks:       any[];
-  teamMembers: any[];
-  notes:       any[];
-  files:       any[];
-  folders:     any[];
-  loading:     boolean;
-  error:       string | null;
+  tasks: Task[];
+  teamMembers: TeamMember[];
+  notes: Note[];
+  projects: Project[];
+  loading: boolean;
+  files: any[];
 }
 
 const AppDataContext = createContext<AppDataContextType>({
-  projects:    [],
-  tasks:       [],
+  tasks: [],
   teamMembers: [],
-  notes:       [],
-  files:       [],
-  folders:     [],
-  loading:     false,
-  error:       null,
+  notes: [],
+  projects: [],
+  loading: true,
+  files: [],
 });
 
-const sortDesc = (arr: any[]): any[] =>
-  [...arr].sort((a, b) => {
-    const ms = (v: any): number => {
-      if (!v) return 0;
-      if (typeof v?.toMillis === "function") return v.toMillis();
-      if (typeof v?.seconds  === "number")   return v.seconds * 1000;
-      return new Date(v).getTime();
-    };
-    return ms(b.createdAt) - ms(a.createdAt);
-  });
-
-export const AppDataProvider = ({ children }: { children: React.ReactNode }) => {
+export function AppDataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
 
-  const [projects,    setProjects]    = useState<any[]>([]);
-  const [tasks,       setTasks]       = useState<any[]>([]);
-  const [teamMembers, setTeamMembers] = useState<any[]>([]);
-  const [notes,       setNotes]       = useState<any[]>([]);
-  const [files,       setFiles]       = useState<any[]>([]);
-  const [folders,     setFolders]     = useState<any[]>([]);
+  // Extract uid as a plain string — this is the critical fix.
+  // useEffect depends on this string, not the user object,
+  // so it only re-runs when the actual uid changes (sign in/out)
+  // and never double-fires due to object reference changes.
+  const uid = user?.uid ?? "";
+
+  const [tasks, setTasks]             = useState<Task[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [notes, setNotes]             = useState<Note[]>([]);
+  const [projects, setProjects]       = useState<Project[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const resolvedRef                   = useRef(false);
 
   useEffect(() => {
-    if (!user?.uid) {
-      setProjects([]);
+    // No user — clear everything immediately
+    if (!uid) {
       setTasks([]);
       setTeamMembers([]);
       setNotes([]);
-      setFiles([]);
-      setFolders([]);
+      setProjects([]);
+      setLoading(false);
       return;
     }
 
-    const uid = user.uid;
-    const col = (name: string) => collection(db, "users", uid, name);
+    console.log("[AppData] 🔄 Attaching all listeners for uid:", uid);
+    resolvedRef.current = false;
+    setLoading(true);
+
+    let t = false, m = false, n = false, p = false;
+
+    function tryResolve() {
+      if (!resolvedRef.current && t && m && n && p) {
+        resolvedRef.current = true;
+        setLoading(false);
+        console.log("[AppData] ✅ All listeners ready — loading resolved");
+      }
+    }
+
+    // Hard safety net — never spin longer than 5 seconds
+    const timeout = setTimeout(() => {
+      if (!resolvedRef.current) {
+        resolvedRef.current = true;
+        setLoading(false);
+        console.warn("[AppData] ⚠️ Safety timeout fired — forced ready");
+      }
+    }, 5000);
+
+    const unsubTasks = onSnapshot(
+      collection(db, "users", uid, "tasks"),
+      (snap) => {
+        const data: Task[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<Task, "id">),
+        } as Task));
+        data.sort((a, b) => {
+          const aT = a.createdAt && typeof a.createdAt === "object" &&
+            "seconds" in (a.createdAt as object)
+            ? (a.createdAt as { seconds: number }).seconds : 0;
+          const bT = b.createdAt && typeof b.createdAt === "object" &&
+            "seconds" in (b.createdAt as object)
+            ? (b.createdAt as { seconds: number }).seconds : 0;
+          return bT - aT;
+        });
+        setTasks(data);
+        t = true;
+        console.log("[AppData] tasks:", data.length);
+        tryResolve();
+      },
+      () => { t = true; tryResolve(); }
+    );
+
+    const unsubMembers = onSnapshot(
+      collection(db, "users", uid, "teamMembers"),
+      (snap) => {
+        const data: TeamMember[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<TeamMember, "id">),
+        } as TeamMember));
+        setTeamMembers(data);
+        m = true;
+        console.log("[AppData] teamMembers:", data.length);
+        tryResolve();
+      },
+      () => { m = true; tryResolve(); }
+    );
+
+    const unsubNotes = onSnapshot(
+      collection(db, "users", uid, "notes"),
+      (snap) => {
+        const data: Note[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<Note, "id">),
+        } as Note));
+        setNotes(data);
+        n = true;
+        console.log("[AppData] notes:", data.length);
+        tryResolve();
+      },
+      () => { n = true; tryResolve(); }
+    );
 
     const unsubProjects = subscribeToProjects(uid, (data) => {
-      setProjects(
-        data.sort((a, b) => {
-          const ms = (v: any): number =>
-            v?.toMillis?.() ?? (v?.seconds ? v.seconds * 1000 : 0);
-          return ms(b.createdAt) - ms(a.createdAt);
-        })
-      );
+      setProjects(data);
+      p = true;
+      console.log("[AppData] projects:", data.length);
+      tryResolve();
     });
 
-    const u1 = onSnapshot(
-      col("tasks"),
-      (s) => {
-        setTasks(sortDesc(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        console.log("[AppData] tasks:", s.size);
-      },
-      (e) => console.error("[AppData] tasks error:", e.code)
-    );
-
-    const u2 = onSnapshot(
-      col("teamMembers"),
-      (s) => setTeamMembers(sortDesc(s.docs.map(d => ({ id: d.id, ...d.data() })))),
-      (e) => console.error("[AppData] teamMembers error:", e.code)
-    );
-
-    const u3 = onSnapshot(
-      col("notes"),
-      (s) => setNotes(sortDesc(s.docs.map(d => ({ id: d.id, ...d.data() })))),
-      (e) => console.error("[AppData] notes error:", e.code)
-    );
-
-    const u4 = onSnapshot(
-      col("files"),
-      (s) => setFiles(sortDesc(s.docs.map(d => ({ id: d.id, ...d.data() })))),
-      (e) => console.error("[AppData] files error:", e.code)
-    );
-
-    const u5 = onSnapshot(
-      col("folders"),
-      (s) => setFolders(sortDesc(s.docs.map(d => ({ id: d.id, ...d.data() })))),
-      (e) => console.error("[AppData] folders error:", e.code)
-    );
-
-    return () => { unsubProjects(); u1(); u2(); u3(); u4(); u5(); };
-  }, [user?.uid]);
+    return () => {
+      console.log("[AppData] 🧹 Cleaning up listeners for uid:", uid);
+      clearTimeout(timeout);
+      unsubTasks();
+      unsubMembers();
+      unsubNotes();
+      unsubProjects();
+    };
+  }, [uid]); // <-- uid string only, never user object
 
   return (
     <AppDataContext.Provider
-      value={{ projects, tasks, teamMembers, notes, files, folders, loading: false, error: null }}
+      value={{ tasks, teamMembers, notes, projects, loading, files: [] }}
     >
       {children}
     </AppDataContext.Provider>
   );
-};
+}
 
-export const useAppData = () => useContext(AppDataContext);
+export function useAppData(): AppDataContextType {
+  return useContext(AppDataContext);
+}
