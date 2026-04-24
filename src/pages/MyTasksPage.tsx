@@ -3,14 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { useAppData } from "../context/AppDataContext";
 import { useAuth }    from "../context/AuthContext";
 import { doc, updateDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../lib/firebase/config";
-import Navbar from "../components/Navbar";
+import { getOverdueTasks } from "../utils/overdueUtils";
 
-type FilterType = "All" | "To Do" | "In Progress" | "In Review" | "Done";
+type FilterType = "All" | "To Do" | "In Progress" | "In Review" | "Done" | "Overdue";
 
 const statusColor: Record<string, string> = {
   "To Do":       "bg-gray-100 text-gray-600",
@@ -25,16 +26,55 @@ const priorityColor: Record<string, string> = {
   "Low":    "bg-gray-100 text-gray-500",
 };
 
-const FILTERS: FilterType[] = ["All", "To Do", "In Progress", "In Review", "Done"];
+const FILTERS: FilterType[] = ["All", "To Do", "In Progress", "In Review", "Done", "Overdue"];
+
+// Maps a lowercase URL "filter" query value → the canonical FilterType
+// label used in component state. Returns null for unknown values so we
+// can leave the current tab untouched.
+const filterFromQuery = (raw: string | null): FilterType | null => {
+  if (!raw) return null;
+  const key = raw.toLowerCase();
+  const match = FILTERS.find(f => f.toLowerCase() === key);
+  return match ?? null;
+};
 
 export default function MyTasksPage() {
   const { user }  = useAuth();
   const { tasks } = useAppData();
+  const location  = useLocation();
   const [filter, setFilter] = useState<FilterType>("All");
 
-  const filteredTasks = filter === "All"
-    ? tasks
+  // Sync the active tab with the ?filter= query parameter every time the
+  // URL search string changes — including initial mount and subsequent
+  // navigations that point at this page with a different filter value.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const next = filterFromQuery(params.get("filter"));
+    if (next) setFilter(next);
+  }, [location.search]);
+
+  // Shared overdue detection — same logic used by the Dashboard banner,
+  // so counts stay in sync. Recomputes on every Firestore update because
+  // `tasks` comes from the realtime useAppData() listener.
+  const overdueTasks = useMemo(() => getOverdueTasks(tasks), [tasks]);
+
+  // Set-based lookup lets a single row flag itself as overdue without
+  // re-running the date comparison per render cycle.
+  const overdueIds = useMemo(
+    () => new Set(overdueTasks.map(t => t.id)),
+    [overdueTasks]
+  );
+
+  const filteredTasks =
+    filter === "All"     ? tasks
+    : filter === "Overdue" ? overdueTasks
     : tasks.filter(t => t.status === filter);
+
+  const countForFilter = (f: FilterType): number => {
+    if (f === "All")     return tasks.length;
+    if (f === "Overdue") return overdueTasks.length;
+    return tasks.filter(t => t.status === f).length;
+  };
 
   const toggleDone = async (task: any) => {
     if (!user?.uid) return;
@@ -52,7 +92,6 @@ export default function MyTasksPage() {
 
   return (
     <div className="ml-0 bg-[#f4f5f7] min-h-screen overflow-y-auto">
-      <Navbar title="My Tasks" />
       <div className="max-w-6xl mx-auto px-6 pt-14 pb-8">
 
         {/* Header */}
@@ -67,22 +106,35 @@ export default function MyTasksPage() {
 
         {/* Filter Tabs */}
         <div className="flex gap-2 mb-4 flex-wrap">
-          {FILTERS.map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                filter === f
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-              }`}
-            >
-              {f}
-              <span className="ml-1.5 opacity-70">
-                {f === "All" ? tasks.length : tasks.filter(t => t.status === f).length}
-              </span>
-            </button>
-          ))}
+          {FILTERS.map(f => {
+            const isActive = filter === f;
+            const isOverdueTab = f === "Overdue";
+
+            const className = isOverdueTab
+              ? `px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-red-500 text-white"
+                    : "bg-red-100 text-red-500 border border-red-200 hover:bg-red-200"
+                }`
+              : `px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                }`;
+
+            return (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={className}
+              >
+                {f}
+                <span className="ml-1.5 opacity-70">
+                  {countForFilter(f)}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Task List */}
@@ -119,7 +171,9 @@ export default function MyTasksPage() {
                     {task.title}
                   </p>
                   {task.dueDate && (
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className={`text-xs mt-0.5 ${
+                      overdueIds.has(task.id) ? "text-red-500 font-medium" : "text-gray-400"
+                    }`}>
                       Due: {new Date(task.dueDate).toLocaleDateString()}
                     </p>
                   )}

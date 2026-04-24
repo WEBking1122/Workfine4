@@ -15,6 +15,7 @@ import InsightsPage from './pages/InsightsPage';
 import MyTasksPage from './pages/MyTasksPage';
 import SettingsPage from './pages/SettingsPage';
 import ProjectPage from './pages/ProjectPage';
+import ProjectsPage from './pages/ProjectsPage';
 import CalendarPage from './pages/CalendarPage';
 
 function ProtectedRoute() {
@@ -71,6 +72,7 @@ export default function App() {
                 <Route path="/insights" element={<InsightsPage />} />
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/:id" element={<ProjectPage />} />
                 {/* ✅ ADD ALL FUTURE PAGES HERE — one line each */}
               </Route>

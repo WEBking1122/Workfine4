@@ -44,27 +44,41 @@ export default function CreateProjectModal({ onClose }: Props) {
   const [error,  setError]  = useState("");
   const [saving, setSaving] = useState(false);
 
-  // ── Step 1 → Step 2 (NEVER submits the form) ──────────────
-  const handleNext = useCallback(() => {
-    if (!name.trim()) {
-      setError("Project name is required.");
-      return;
-    }
-    setError("");
-    setStep(2);          // just change step — nothing else
-  }, [name]);
-
-  // ── Step 2 → Step 1 ───────────────────────────────────────
-  const handleBack = useCallback(() => {
-    setError("");
-    setStep(1);
-  }, []);
-
-  // ── Final Firestore write (only called from type="submit") ─
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();          // stop any native form behaviour
+  // ── Step 1 → Step 2 (NEVER submits, NEVER creates) ────────
+  const handleNext = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
       e.stopPropagation();
+
+      if (!name.trim()) {
+        setError("Project name is required.");
+        return;
+      }
+      setError("");
+      setStep(2);          // just change step — nothing else
+    },
+    [name]
+  );
+
+  // ── Step 2 → Step 1 (preserves all data) ──────────────────
+  const handleBack = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setError("");
+      setStep(1);
+    },
+    []
+  );
+
+  // ── Final Firestore write (ONLY called from Create button) ─
+  const handleCreate = useCallback(
+    async (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Hard guard — only allow creation from step 2
+      if (step !== 2) return;
 
       if (!user?.uid) {
         setError("You must be signed in.");
@@ -88,14 +102,27 @@ export default function CreateProjectModal({ onClose }: Props) {
           dueDate:     dueDate || null,
         });
         console.log("[CreateProjectModal] ✅ Project saved:", id);
-        onClose();   // ← ONLY place onClose is called
+        onClose();   // ← ONLY place onClose is called on success
       } catch (err) {
         console.error("[CreateProjectModal] ❌ Save error:", err);
         setError("Failed to save project. Check your connection.");
         setSaving(false);
       }
     },
-    [user, name, description, color, status, priority, dueDate, onClose]
+    [step, user, name, description, color, status, priority, dueDate, onClose]
+  );
+
+  // Prevent Enter key in inputs from triggering any implicit submission.
+  // Since we're using a <div> wrapper (no <form>), there is no native
+  // submit to worry about, but this also stops Enter from clicking the
+  // first button in the DOM (the focused button) accidentally.
+  const blockEnterKey = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && e.currentTarget.tagName !== "TEXTAREA") {
+        e.preventDefault();
+      }
+    },
+    []
   );
 
   return (
@@ -146,11 +173,11 @@ export default function CreateProjectModal({ onClose }: Props) {
         </div>
 
         {/*
-          CRITICAL: The <form> wraps BOTH steps.
-          Only the final submit button has type="submit".
-          All other buttons MUST have type="button".
+          CRITICAL: We use a plain <div> (NOT a <form>) so there is
+          no possibility of an implicit/native submit. All actions
+          are wired through individual button onClick handlers.
         */}
-        <form onSubmit={handleSubmit} noValidate>
+        <div>
           <div className="px-6 pb-2 flex flex-col gap-4">
 
             {/* ════════════ STEP 1 ════════════ */}
@@ -167,6 +194,7 @@ export default function CreateProjectModal({ onClose }: Props) {
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    onKeyDown={blockEnterKey}
                     placeholder="e.g. Website Redesign"
                     autoFocus
                     className="w-full border border-gray-200 rounded-xl
@@ -186,6 +214,7 @@ export default function CreateProjectModal({ onClose }: Props) {
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
+                    onKeyDown={blockEnterKey}
                     placeholder="What is this project about?"
                     rows={3}
                     className="w-full border border-gray-200 rounded-xl
@@ -296,6 +325,7 @@ export default function CreateProjectModal({ onClose }: Props) {
                     type="date"
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
+                    onKeyDown={blockEnterKey}
                     className="w-full border border-gray-200 rounded-xl
                                px-4 py-2.5 text-sm text-gray-900
                                focus:outline-none focus:border-blue-500
@@ -377,7 +407,7 @@ export default function CreateProjectModal({ onClose }: Props) {
               </>
             ) : (
               <>
-                {/* Back — type="button" — goes back to step 1 */}
+                {/* Back — type="button" — goes back to step 1, keeps data */}
                 <button
                   type="button"
                   onClick={handleBack}
@@ -388,9 +418,10 @@ export default function CreateProjectModal({ onClose }: Props) {
                   ← Back
                 </button>
 
-                {/* Create Project — type="submit" — ONLY this submits */}
+                {/* Create Project — type="button" — ONLY this creates */}
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleCreate}
                   disabled={saving}
                   className="flex-1 bg-blue-600 hover:bg-blue-700
                              disabled:opacity-60 disabled:cursor-not-allowed
@@ -402,7 +433,7 @@ export default function CreateProjectModal({ onClose }: Props) {
               </>
             )}
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

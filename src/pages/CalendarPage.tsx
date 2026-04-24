@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useAppData } from "../context/AppDataContext";
 import { useNavigate } from "react-router-dom";
+import { getOverdueTasks } from "../utils/overdueUtils";
 
 interface Task {
   id: string;
@@ -35,13 +36,23 @@ const MONTHS = [
   "July","August","September","October","November","December",
 ];
 
-function isOverdue(task: Task): boolean {
-  if (!task.dueDate || task.status === "completed") return false;
-  return new Date(task.dueDate) < new Date(new Date().toDateString());
-}
-
 function dateKey(y: number, m: number, d: number): string {
   return `${y}-${String(m + 1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+}
+
+function isTaskDone(task: Task): boolean {
+  const s = task.status?.toLowerCase();
+  return s === "done" || s === "completed";
+}
+
+function isTaskOverdue(task: Task): boolean {
+  if (!task.dueDate) return false;
+  if (isTaskDone(task)) return false;
+  const due = new Date(task.dueDate);
+  due.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return due < today;
 }
 
 export default function CalendarPage() {
@@ -59,6 +70,14 @@ export default function CalendarPage() {
   const [filterStatus,  setFilterStatus]  = useState("all");
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
 
+  // Shared overdue detection — recomputes on every Firestore push
+  const overdueTasks = useMemo(() => getOverdueTasks(tasks), [tasks]);
+  const overdueIds   = useMemo(
+    () => new Set(overdueTasks.map((t: Task) => t.id)),
+    [overdueTasks]
+  );
+  const isOverdueTask = (t: Task) => overdueIds.has(t.id);
+
   const projectColorMap = useMemo(() => {
     const map: Record<string, string> = {};
     projects.forEach((p, i) => {
@@ -67,11 +86,28 @@ export default function CalendarPage() {
     return map;
   }, [projects]);
 
+  // ── FIXED: all status comparisons are now case-insensitive ──
   const filteredTasks = useMemo(() => tasks.filter((t) => {
     if (filterProject !== "all" && t.projectId !== filterProject) return false;
-    if (filterStatus === "completed" && t.status !== "completed")  return false;
-    if (filterStatus === "active"    && t.status === "completed")  return false;
-    if (filterStatus === "overdue"   && !isOverdue(t))             return false;
+
+    const status = t.status?.toLowerCase() ?? "";
+
+    if (filterStatus === "completed") {
+      if (status !== "completed" && status !== "done") return false;
+    }
+
+    if (filterStatus === "active") {
+      if (status === "completed" || status === "done") return false;
+    }
+
+    if (filterStatus === "todo") {
+      if (status !== "todo" && status !== "to do" && status !== "to-do") return false;
+    }
+
+    if (filterStatus === "overdue") {
+      if (!isTaskOverdue(t)) return false;
+    }
+
     return true;
   }), [tasks, filterProject, filterStatus]);
 
@@ -79,7 +115,8 @@ export default function CalendarPage() {
     const map: Record<string, Task[]> = {};
     filteredTasks.forEach((t) => {
       if (!t.dueDate) return;
-      const key = t.dueDate.slice(0, 10);
+      const d = new Date(t.dueDate);
+      const key = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
       if (!map[key]) map[key] = [];
       map[key].push(t);
     });
@@ -103,11 +140,15 @@ export default function CalendarPage() {
     return d.getFullYear() === viewYear && d.getMonth() === viewMonth;
   }), [filteredTasks, viewYear, viewMonth]);
 
-  const summaryCompleted  = monthTasks.filter((t) => t.status === "completed").length;
-  const summaryOverdue    = monthTasks.filter(isOverdue).length;
-  const summaryInProgress = monthTasks.filter(
-    (t) => t.status === "in-progress" || t.status === "active"
-  ).length;
+  // ── FIXED: case-insensitive status checks in summary counts ──
+  const summaryCompleted  = monthTasks.filter((t) => isTaskDone(t)).length;
+  const summaryOverdue    = monthTasks.filter((t) => isTaskOverdue(t)).length;
+  const summaryInProgress = monthTasks.filter((t) => {
+    const s = t.status?.toLowerCase();
+    return s === "in-progress" || s === "active" || s === "in progress";
+  }).length;
+
+  const isOverdueFilter = filterStatus === "overdue";
 
   function prevMonth() {
     if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); }
@@ -122,8 +163,6 @@ export default function CalendarPage() {
 
   return (
     <div className="ml-0 bg-[#f4f5f7] min-h-screen overflow-y-auto">
-
-      {/* ── ONLY THIS LINE CHANGED: max-w-6xl replaces max-w-[1400px], removed pl-8 ── */}
       <div className="max-w-6xl mx-auto px-6 pt-14 pb-10">
 
         {/* ── PAGE HEADER ── */}
@@ -169,7 +208,9 @@ export default function CalendarPage() {
               onClick={() => setFilterStatus(s)}
               className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors capitalize ${
                 filterStatus === s
-                  ? "bg-violet-600 text-white shadow-sm"
+                  ? s === "overdue"
+                    ? "bg-red-500 text-white shadow-sm"
+                    : "bg-violet-600 text-white shadow-sm"
                   : "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
               }`}
             >
@@ -227,7 +268,8 @@ export default function CalendarPage() {
                     const dayTasks   = tasksByDate[key] || [];
                     const isToday    = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
                     const isSelected = day === selectedDay;
-                    const hasOverdue = dayTasks.some(isOverdue);
+                    const hasOverdue = dayTasks.some((t) => isTaskOverdue(t));
+                    const overdueOnlyHighlight = isOverdueFilter && hasOverdue;
 
                     return (
                       <button
@@ -235,21 +277,18 @@ export default function CalendarPage() {
                         onClick={() => setSelectedDay(day)}
                         className={[
                           "h-24 flex flex-col items-start p-2 border-r border-slate-100 last:border-r-0 transition-all text-left w-full overflow-hidden",
-                          isSelected   ? "bg-violet-50 ring-2 ring-inset ring-violet-400"
-                          : isToday    ? "bg-blue-50"
-                          : hasOverdue ? "bg-red-50 hover:bg-red-100/50"
-                          :              "bg-white hover:bg-slate-50",
+                          isSelected            ? "bg-violet-50 ring-2 ring-inset ring-violet-400"
+                          : isToday             ? "bg-blue-50"
+                          : overdueOnlyHighlight? "bg-red-50 hover:bg-red-100/50"
+                          :                       "bg-white hover:bg-slate-50",
                         ].join(" ")}
                       >
-                        {/* Day number */}
                         <div className="flex items-center justify-between w-full mb-1">
                           <span className={[
                             "text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full",
-                            isToday
-                              ? "bg-blue-600 text-white"
-                              : isSelected
-                              ? "text-violet-700 font-bold"
-                              : "text-slate-600",
+                            isToday    ? "bg-blue-600 text-white"
+                            : isSelected ? "text-violet-700 font-bold"
+                            :              "text-slate-600",
                           ].join(" ")}>
                             {day}
                           </span>
@@ -260,14 +299,13 @@ export default function CalendarPage() {
                           )}
                         </div>
 
-                        {/* Priority dots */}
                         {dayTasks.length > 0 && (
                           <div className="flex flex-wrap gap-0.5">
                             {dayTasks.slice(0, 3).map((t) => (
                               <span
                                 key={t.id}
                                 className={`w-1.5 h-1.5 rounded-full flex-none ${
-                                  isOverdue(t) ? "bg-red-500" : PRIORITY_DOT[t.priority?.toLowerCase()] || "bg-slate-400"
+                                  isTaskOverdue(t) ? "bg-red-500" : PRIORITY_DOT[t.priority?.toLowerCase()] || "bg-slate-400"
                                 }`}
                               />
                             ))}
@@ -320,7 +358,6 @@ export default function CalendarPage() {
           {sidePanelOpen && (
             <div className="flex-none w-72 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
 
-              {/* Header */}
               <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
                 <h3 className="text-sm font-semibold text-slate-700">
                   {selectedDay ? `${MONTHS[viewMonth]} ${selectedDay}, ${viewYear}` : "Select a day"}
@@ -330,20 +367,23 @@ export default function CalendarPage() {
                 </p>
               </div>
 
-              {/* Task list */}
               <div className="overflow-y-auto max-h-[520px] px-4 py-3 space-y-2">
                 {selectedTasks.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-32 text-center gap-2">
                     <div className="text-3xl">📅</div>
                     <p className="text-xs text-slate-400">
-                      {selectedDay ? "No tasks due on this day" : "Click a day to view tasks"}
+                      {!selectedDay
+                        ? "Click a day to view tasks"
+                        : isOverdueFilter
+                        ? "No overdue tasks on this day"
+                        : "No tasks due on this day"}
                     </p>
                   </div>
                 ) : (
                   selectedTasks.map((task) => {
                     const proj      = projects.find((p) => p.id === task.projectId);
                     const projColor = proj ? projectColorMap[proj.id] || "#8b5cf6" : "#8b5cf6";
-                    const overdue   = isOverdue(task);
+                    const overdue   = isTaskOverdue(task);
 
                     return (
                       <div
@@ -357,11 +397,20 @@ export default function CalendarPage() {
                           }`} />
                           <p className="text-xs font-medium text-slate-700 leading-snug line-clamp-2">{task.title}</p>
                         </div>
+
+                        {task.dueDate && (
+                          <p className={`mt-1.5 text-[10px] font-medium ${
+                            overdue ? "text-red-500" : "text-slate-400"
+                          }`}>
+                            Due: {new Date(task.dueDate).toLocaleDateString()}
+                          </p>
+                        )}
+
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${
                             overdue
                               ? "bg-red-100 text-red-600"
-                              : task.status === "completed"
+                              : isTaskDone(task)
                               ? "bg-emerald-100 text-emerald-600"
                               : "bg-slate-100 text-slate-500"
                           }`}>
@@ -371,6 +420,7 @@ export default function CalendarPage() {
                             <span className="text-[10px] text-slate-400 font-medium capitalize">{task.priority}</span>
                           )}
                         </div>
+
                         {proj && (
                           <div className="mt-2 flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full flex-none" style={{ backgroundColor: projColor }} />
@@ -391,7 +441,6 @@ export default function CalendarPage() {
                 )}
               </div>
 
-              {/* Active projects footer */}
               {projects.length > 0 && (
                 <div className="border-t border-slate-200 px-5 py-4 bg-slate-50">
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Active Projects</p>

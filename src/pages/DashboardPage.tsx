@@ -13,6 +13,8 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import CreateProjectModal from "../components/CreateProjectModal";
+import { getOverdueTasks } from "../utils/overdueUtils";
+import { FolderKanban } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const toMs = (v: any): number => {
@@ -61,9 +63,7 @@ const DashboardPage = () => {
   const totalMembers    = teamMembers.length;
   const now             = new Date();
 
-  const overdueTasks = tasks.filter(t =>
-    t.dueDate && new Date(t.dueDate) < now && t.status !== "Done"
-  );
+  const overdueTasks = useMemo(() => getOverdueTasks(tasks), [tasks]);
 
   // ── Workflow Health chart ────────────────────────────────────────────────
   const workflowData = [
@@ -140,7 +140,7 @@ const DashboardPage = () => {
   const displayName = user?.displayName ?? user?.email?.split("@")[0] ?? "User";
 
   const STAT_CARDS = [
-    { label: "Total Projects",   value: totalProjects,  color: "text-blue-600",    bg: "bg-blue-50",    icon: "🗂" },
+    { label: "Total Projects",   value: totalProjects,  color: "text-violet-600",  bg: "bg-violet-100", icon: <FolderKanban className="w-6 h-6 text-violet-600" /> },
     { label: "Active Tasks",     value: activeTasks,    color: "text-amber-600",   bg: "bg-amber-50",   icon: "⏳" },
     { label: "Completed Tasks",  value: completedTasks, color: "text-emerald-600", bg: "bg-emerald-50", icon: "✅" },
     { label: "Team Members",     value: totalMembers,   color: "text-purple-600",  bg: "bg-purple-50",  icon: "👥" },
@@ -180,7 +180,7 @@ const DashboardPage = () => {
               </span>
             </p>
             <div className="flex items-center gap-3">
-              <button onClick={() => navigate("/tasks")}
+              <button onClick={() => navigate("/my-tasks?filter=overdue")}
                       className="text-xs text-red-600 hover:underline font-medium">
                 View All →
               </button>
@@ -485,7 +485,7 @@ const DashboardPage = () => {
               </button>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              {projects.map(p => {
+              {projects.slice(0, 6).map(p => {
                 const pt   = tasks.filter(t => t.projectId === p.id);
                 const done = pt.filter(t => t.status === "Done").length;
                 const pct  = pt.length > 0 ? Math.round((done/pt.length)*100) : 0;
@@ -566,6 +566,15 @@ const DashboardPage = () => {
                 );
               })}
             </div>
+            {projects.length > 6 && (
+              <button
+                type="button"
+                onClick={() => navigate("/projects")}
+                className="mt-4 w-full py-2.5 text-sm font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-xl border border-violet-200 transition-colors"
+              >
+                View All Projects ({projects.length} total) →
+              </button>
+            )}
           </div>
         )}
 
