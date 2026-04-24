@@ -205,9 +205,15 @@ function SidebarContent({
         {/* Projects */}
         <div className="px-3 mt-6">
           <div className="flex items-center justify-between mb-2 px-2">
-            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
-              Projects
-            </span>
+            <NavLink
+              to="/projects"
+              className={({ isActive }) => cn(
+                "text-[10px] font-semibold uppercase tracking-widest transition-colors hover:text-blue-300",
+                isActive ? "text-blue-300" : "text-gray-500"
+              )}
+            >
+              PROJECTS
+            </NavLink>
             <button
               type="button"
               onClick={() => setShowCreateProject(true)}
