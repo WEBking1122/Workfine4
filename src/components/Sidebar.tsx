@@ -21,6 +21,7 @@ import { useAppData } from "../context/AppDataContext";
 import { deleteProject } from "../lib/firebase/projects";
 import { useNavigate } from "react-router-dom";
 import CreateProjectModal from "./CreateProjectModal";
+import logo from "../../fivicon.png";
 
 export default function Sidebar() {
   const { user, signOutUser } = useAuth();
@@ -161,12 +162,11 @@ function SidebarContent({
       {/* Logo */}
       <div className="p-6 flex items-center justify-between flex-shrink-0">
         <Link to="/" className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg primary-gradient flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
-          </div>
-          <span className="font-bold text-lg text-white tracking-tight uppercase">Slate &amp; Violet</span>
+          <img src={logo} alt="Workfine Logo" className="w-8 h-8 object-contain rounded-lg shadow-lg shadow-indigo-500/20" />
+          <span className="text-2xl tracking-tight">
+            <span className="font-extrabold text-white">Wurk</span>
+            <span className="font-light text-white">fine</span>
+          </span>
         </Link>
         {showCloseButton && (
           <button onClick={onClose} className="text-slate-400 hover:text-white">
