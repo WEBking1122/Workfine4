@@ -44,7 +44,7 @@ export default function InsightsPage() {
 
   if (!pageReady) {
     return (
-      <div className="ml-56 bg-[#f4f5f7] min-h-screen overflow-y-auto">
+      <div className="ml-0 bg-[#f4f5f7] min-h-screen overflow-y-auto">
         <div className="max-w-6xl mx-auto px-6 pt-14 pb-8">
           <div className="h-8 w-48 bg-gray-200 rounded-lg animate-pulse mb-2" />
           <div className="h-4 w-64 bg-gray-100 rounded animate-pulse mb-8" />
@@ -220,7 +220,7 @@ export default function InsightsPage() {
   const healthColor = healthScore >= 80 ? "#10b981" : healthScore >= 60 ? "#3b82f6" : healthScore >= 40 ? "#f59e0b" : "#ef4444";
 
   return (
-    <div className="ml-56 bg-[#f4f5f7] min-h-screen overflow-y-auto">
+    <div className="ml-0 bg-[#f4f5f7] min-h-screen overflow-y-auto">
       <div className="max-w-6xl mx-auto px-6 pt-14 pb-8">
         {/* Page header */}
         <div className="mb-6">

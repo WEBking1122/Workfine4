@@ -3,27 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ReactNode } from 'react';
-import Sidebar from './Sidebar';
+import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 
-interface AppShellProps {
-  children: ReactNode;
-  title: string;
-}
-
-export default function AppShell({ children, title }: AppShellProps) {
+export default function AppShell() {
   return (
-    <div className="flex min-h-screen bg-[#0F172A] text-[#F1F5F9]">
-      <Sidebar />
-      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
-        <Navbar title={title} />
-        <main className="flex-1 p-8">
-          <div className="max-w-7xl mx-auto">
-            {children}
-          </div>
-        </main>
-      </div>
+    <div className="flex flex-col flex-1 h-full w-full overflow-hidden">
+      <Navbar />
+      <main className="flex-1 overflow-y-auto">
+        <Outlet />
+      </main>
     </div>
   );
 }

@@ -8,8 +8,8 @@ import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   BarChart2,
-  CalendarDays,
   CheckSquare,
+  Calendar,
   Menu,
   X,
   LogOut
@@ -18,7 +18,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { cn, getInitials, getAvatarColor } from '../lib/utils';
 import { useAppData } from "../context/AppDataContext";
-import { createProject, deleteProject } from "../lib/firebase/projects";
+import { deleteProject } from "../lib/firebase/projects";
 import { useNavigate } from "react-router-dom";
 import CreateProjectModal from "./CreateProjectModal";
 
@@ -28,7 +28,6 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
-
   const [showCreateProject, setShowCreateProject] = useState(false);
 
   const handleDelete = async (e: React.MouseEvent, projectId: string) => {
@@ -40,13 +39,43 @@ export default function Sidebar() {
   const navItems = [
     { name: 'Dashboard', icon: LayoutDashboard, path: '/' },
     { name: 'Insights',  icon: BarChart2,        path: '/insights' },
-    { name: 'Calendar',  icon: CalendarDays,      path: '/calendar' },
+    { name: 'Calendar',  icon: Calendar,         path: '/calendar' },
     { name: 'My Tasks',  icon: CheckSquare,       path: '/my-tasks' },
   ];
 
   return (
-    <>
-      {/* Mobile Menu Button */}
+    /*
+      THE FIX: replace <> fragment with a real div that is:
+        - w-64 flex-shrink-0  → occupies exactly 256px in the flex row
+        - h-screen            → full viewport height
+        - relative            → so mobile overlays position correctly
+        - lg:block hidden     → only takes up space on desktop
+
+      Previously the <> fragment had no width of its own in the flex row.
+      The desktop <aside> inside it was display:none on mobile and
+      display:flex on desktop, but the FRAGMENT wrapper never claimed
+      any width — so the flex parent saw a 0-width item and the dark
+      sidebar background of the <aside> bled through as a gap between
+      the sidebar and the page content.
+    */
+    <div className="relative flex-shrink-0 w-64 h-screen hidden lg:block">
+
+      {/* Desktop sidebar — fills the wrapper div exactly */}
+      <aside className="absolute inset-0 flex flex-col bg-[#0F172A] border-r border-slate-800">
+        <SidebarContent
+          user={user}
+          signOutUser={signOutUser}
+          projects={projects}
+          navigate={navigate}
+          location={location}
+          navItems={navItems}
+          handleDelete={handleDelete}
+          setShowCreateProject={setShowCreateProject}
+          onClose={() => {}}
+        />
+      </aside>
+
+      {/* Mobile Menu Button — rendered outside flow, only on small screens */}
       <button
         onClick={() => setIsMobileMenuOpen(true)}
         className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-slate-900 text-white rounded-lg"
@@ -54,7 +83,7 @@ export default function Sidebar() {
         <Menu size={20} />
       </button>
 
-      {/* Sidebar Overlay */}
+      {/* Mobile overlay backdrop */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <motion.div
@@ -67,156 +96,201 @@ export default function Sidebar() {
         )}
       </AnimatePresence>
 
-      <motion.aside
-        id="sidebar"
-        className={cn(
-          "fixed inset-y-0 left-0 z-[70] w-64 bg-[#0F172A] border-r border-slate-800 flex flex-col transition-transform duration-300 lg:translate-x-0",
-          !isMobileMenuOpen && "-translate-x-full"
+      {/* Mobile sidebar drawer */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.aside
+            initial={{ x: -256 }}
+            animate={{ x: 0 }}
+            exit={{ x: -256 }}
+            transition={{ type: 'tween', duration: 0.25 }}
+            className="lg:hidden fixed inset-y-0 left-0 z-[70] w-64 flex flex-col bg-[#0F172A] border-r border-slate-800"
+          >
+            <SidebarContent
+              user={user}
+              signOutUser={signOutUser}
+              projects={projects}
+              navigate={navigate}
+              location={location}
+              navItems={navItems}
+              handleDelete={handleDelete}
+              setShowCreateProject={setShowCreateProject}
+              onClose={() => setIsMobileMenuOpen(false)}
+              showCloseButton
+            />
+          </motion.aside>
         )}
-      >
-        {/* Logo */}
-        <div className="p-6 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg primary-gradient flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-            </div>
-            <span className="font-bold text-lg text-white tracking-tight uppercase">Slate &amp; Violet</span>
-          </Link>
-          <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Nav */}
-        <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2 mt-4">
-            Workspace
-          </div>
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) => cn(
-                "flex items-center gap-3 px-3 py-2 rounded-xl transition-all group",
-                isActive
-                  ? "bg-blue-600/20 text-blue-300"
-                  : "text-slate-400 hover:text-white"
-              )}
-            >
-              <item.icon
-                size={18}
-                className={cn(
-                  "transition-transform group-hover:scale-110",
-                  location.pathname === item.path ? "text-blue-300" : ""
-                )}
-              />
-              <span className="font-medium text-sm">{item.name}</span>
-            </NavLink>
-          ))}
-
-          {/* PROJECTS */}
-          <div className="px-3 mt-6">
-            <div className="flex items-center justify-between mb-2 px-2">
-              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
-                Projects
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowCreateProject(true)}
-                className="w-5 h-5 rounded flex items-center justify-center text-gray-400 hover:text-white hover:bg-blue-600 transition-colors text-lg leading-none"
-                title="New Project"
-              >+</button>
-            </div>
-
-            {projects.length === 0 ? (
-              <p className="text-xs text-gray-500 px-2 py-2 italic">
-                No projects yet
-              </p>
-            ) : (
-              projects.map(p => (
-                <div
-                  key={p.id}
-                  className="group flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-gray-300 hover:bg-white/10 transition-colors cursor-pointer"
-                  onClick={() => navigate(`/projects/${p.id}`)}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: p.color ?? "#3b82f6" }}
-                  />
-                  <span className="truncate flex-1">{p.name}</span>
-                  <button
-                    onClick={(e) => handleDelete(e as any, p.id)}
-                    className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all text-xs px-1"
-                    title="Delete project"
-                  >✕</button>
-                </div>
-              ))
-            )}
-          </div>
-        </nav>
-
-        {/* User profile */}
-        <div className="p-4 border-t border-slate-800">
-          <div className="flex items-center gap-3 p-2 bg-slate-800/30 rounded-xl">
-
-            {/* Avatar */}
-            <div className="relative flex-shrink-0">
-              {user?.photoURL ? (
-                <img
-                  src={user.photoURL}
-                  alt={user.displayName ?? user.email ?? 'User'}
-                  referrerPolicy="no-referrer"
-                  className="w-10 h-10 rounded-full object-cover border border-indigo-400/30"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
-                    if (fallback) fallback.style.display = 'flex';
-                  }}
-                />
-              ) : null}
-              <div
-                className={cn(
-                  'w-10 h-10 rounded-full items-center justify-center',
-                  'text-white text-xs font-bold border border-indigo-400/30 flex-shrink-0',
-                  getAvatarColor(user?.email ?? user?.displayName ?? 'user'),
-                  user?.photoURL ? 'hidden' : 'flex'
-                )}
-                aria-label="User avatar"
-              >
-                {getInitials(user?.displayName ?? user?.email ?? 'User')}
-              </div>
-            </div>
-
-            {/* Name + email */}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">
-                {user?.displayName
-                  ?? (user?.email
-                      ? user.email.split('@')[0].replace(/[._-]/g, ' ')
-                      : 'User')}
-              </p>
-              <p className="text-[10px] text-slate-500 truncate mono font-medium">
-                {user?.email ?? ''}
-              </p>
-            </div>
-
-            <button
-              onClick={signOutUser}
-              className="text-slate-500 hover:text-white transition-colors flex-shrink-0"
-              title="Sign out"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
-        </div>
-      </motion.aside>
+      </AnimatePresence>
 
       {/* Create Project Modal */}
       {showCreateProject && (
         <CreateProjectModal onClose={() => setShowCreateProject(false)} />
       )}
+    </div>
+  );
+}
+
+// ── Shared sidebar content ────────────────────────────────────────────────────
+interface SidebarContentProps {
+  user: any;
+  signOutUser: () => void;
+  projects: any[];
+  navigate: (path: string) => void;
+  location: any;
+  navItems: { name: string; icon: any; path: string }[];
+  handleDelete: (e: React.MouseEvent, id: string) => void;
+  setShowCreateProject: (v: boolean) => void;
+  onClose: () => void;
+  showCloseButton?: boolean;
+}
+
+function SidebarContent({
+  user,
+  signOutUser,
+  projects,
+  navigate,
+  location,
+  navItems,
+  handleDelete,
+  setShowCreateProject,
+  onClose,
+  showCloseButton = false,
+}: SidebarContentProps) {
+  return (
+    <>
+      {/* Logo */}
+      <div className="p-6 flex items-center justify-between flex-shrink-0">
+        <Link to="/" className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg primary-gradient flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <span className="font-bold text-lg text-white tracking-tight uppercase">Slate &amp; Violet</span>
+        </Link>
+        {showCloseButton && (
+          <button onClick={onClose} className="text-slate-400 hover:text-white">
+            <X size={20} />
+          </button>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+        <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2 mt-4">
+          Workspace
+        </div>
+        {navItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) => cn(
+              "flex items-center gap-3 px-3 py-2 rounded-xl transition-all group",
+              isActive
+                ? "bg-blue-600/20 text-blue-300"
+                : "text-slate-400 hover:text-white"
+            )}
+          >
+            <item.icon
+              size={18}
+              className={cn(
+                "transition-transform group-hover:scale-110",
+                location.pathname === item.path ? "text-blue-300" : ""
+              )}
+            />
+            <span className="font-medium text-sm">{item.name}</span>
+          </NavLink>
+        ))}
+
+        {/* Projects */}
+        <div className="px-3 mt-6">
+          <div className="flex items-center justify-between mb-2 px-2">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
+              Projects
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowCreateProject(true)}
+              className="w-5 h-5 rounded flex items-center justify-center text-gray-400 hover:text-white hover:bg-blue-600 transition-colors text-lg leading-none"
+              title="New Project"
+            >+</button>
+          </div>
+
+          {projects.length === 0 ? (
+            <p className="text-xs text-gray-500 px-2 py-2 italic">No projects yet</p>
+          ) : (
+            projects.map(p => (
+              <div
+                key={p.id}
+                className="group flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-gray-300 hover:bg-white/10 transition-colors cursor-pointer"
+                onClick={() => navigate(`/projects/${p.id}`)}
+              >
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: p.color ?? "#3b82f6" }}
+                />
+                <span className="truncate flex-1">{p.name}</span>
+                <button
+                  onClick={(e) => handleDelete(e, p.id)}
+                  className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all text-xs px-1"
+                  title="Delete project"
+                >✕</button>
+              </div>
+            ))
+          )}
+        </div>
+      </nav>
+
+      {/* User profile */}
+      <div className="p-4 border-t border-slate-800 flex-shrink-0">
+        <div className="flex items-center gap-3 p-2 bg-slate-800/30 rounded-xl">
+          <div className="relative flex-shrink-0">
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt={user.displayName ?? user.email ?? 'User'}
+                referrerPolicy="no-referrer"
+                className="w-10 h-10 rounded-full object-cover border border-indigo-400/30"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                  if (fallback) fallback.style.display = 'flex';
+                }}
+              />
+            ) : null}
+            <div
+              className={cn(
+                'w-10 h-10 rounded-full items-center justify-center',
+                'text-white text-xs font-bold border border-indigo-400/30 flex-shrink-0',
+                getAvatarColor(user?.email ?? user?.displayName ?? 'user'),
+                user?.photoURL ? 'hidden' : 'flex'
+              )}
+            >
+              {getInitials(user?.displayName ?? user?.email ?? 'User')}
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-white truncate">
+              {user?.displayName
+                ?? (user?.email
+                    ? user.email.split('@')[0].replace(/[._-]/g, ' ')
+                    : 'User')}
+            </p>
+            <p className="text-[10px] text-slate-500 truncate font-medium">
+              {user?.email ?? ''}
+            </p>
+          </div>
+
+          <button
+            onClick={signOutUser}
+            className="text-slate-500 hover:text-white transition-colors flex-shrink-0"
+            title="Sign out"
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+      </div>
     </>
   );
 }

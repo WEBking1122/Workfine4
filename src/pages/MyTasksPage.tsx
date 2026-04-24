@@ -51,7 +51,7 @@ export default function MyTasksPage() {
   };
 
   return (
-    <div className="ml-56 bg-[#f4f5f7] min-h-screen overflow-y-auto">
+    <div className="ml-0 bg-[#f4f5f7] min-h-screen overflow-y-auto">
       <Navbar title="My Tasks" />
       <div className="max-w-6xl mx-auto px-6 pt-14 pb-8">
 

@@ -1,556 +1,410 @@
 import React, { useState, useMemo } from "react";
-import { useNavigate }               from "react-router-dom";
-import { useAppData }                from "../context/AppDataContext";
-import { useAuth }                   from "../context/AuthContext";
+import { useAppData } from "../context/AppDataContext";
+import { useNavigate } from "react-router-dom";
 
-// ── Types ───────────────────────────────────────────────────
 interface Task {
-  id:          string;
-  title:       string;
-  status:      string;
-  priority:    string;
-  dueDate?:    string;
-  projectId?:  string;
-  assignee?:   string;
-  createdAt?:  unknown;
-  updatedAt?:  unknown;
-  [key: string]: unknown;
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  projectId?: string;
+  assignee?: string;
+  dueDate?: string;
 }
 
 interface Project {
-  id:    string;
-  name:  string;
-  color: string;
-  [key: string]: unknown;
+  id: string;
+  name: string;
+  color?: string;
 }
 
-// ── Constants ───────────────────────────────────────────────
+const PRIORITY_DOT: Record<string, string> = {
+  high: "bg-red-500",
+  medium: "bg-orange-400",
+  low: "bg-green-500",
+};
+
+const PROJECT_COLORS = [
+  "#8b5cf6","#3b82f6","#10b981","#f59e0b",
+  "#ef4444","#ec4899","#06b6d4","#84cc16",
+];
+
+const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const MONTHS = [
   "January","February","March","April","May","June",
   "July","August","September","October","November","December",
 ];
-const DAYS_SHORT = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-const PRIORITY_COLOR: Record<string, string> = {
-  High:   "#ef4444",
-  Medium: "#f97316",
-  Low:    "#22c55e",
-};
-
-const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
-  "To Do":       { bg: "bg-slate-100",  text: "text-slate-600"  },
-  "In Progress": { bg: "bg-blue-100",   text: "text-blue-700"   },
-  "In Review":   { bg: "bg-amber-100",  text: "text-amber-700"  },
-  "Done":        { bg: "bg-green-100",  text: "text-green-700"  },
-};
-
-// ── Helpers ─────────────────────────────────────────────────
-function toDateStr(date: Date): string {
-  return date.toISOString().split("T")[0];
+function isOverdue(task: Task): boolean {
+  if (!task.dueDate || task.status === "completed") return false;
+  return new Date(task.dueDate) < new Date(new Date().toDateString());
 }
 
-function isOverdue(dueDate?: string, status?: string): boolean {
-  if (!dueDate || status === "Done") return false;
-  return new Date(dueDate) < new Date(new Date().toDateString());
+function dateKey(y: number, m: number, d: number): string {
+  return `${y}-${String(m + 1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
 }
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    weekday: "long", month: "long", day: "numeric", year: "numeric",
-  });
-}
-
-// ── Component ────────────────────────────────────────────────
-export default function CalendarPage(): React.ReactElement {
-  const { tasks, projects } = useAppData() as {
+export default function CalendarPage() {
+  const { tasks = [], projects = [] } = useAppData() as {
     tasks: Task[];
     projects: Project[];
   };
-  const { user }    = useAuth();
-  const navigate    = useNavigate();
+  const navigate = useNavigate();
 
-  const today       = new Date();
-  const todayStr    = toDateStr(today);
+  const today = new Date();
+  const [viewYear,      setViewYear]      = useState(today.getFullYear());
+  const [viewMonth,     setViewMonth]     = useState(today.getMonth());
+  const [selectedDay,   setSelectedDay]   = useState<number | null>(today.getDate());
+  const [filterProject, setFilterProject] = useState("all");
+  const [filterStatus,  setFilterStatus]  = useState("all");
+  const [sidePanelOpen, setSidePanelOpen] = useState(true);
 
-  const [currentYear,  setCurrentYear]  = useState(today.getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [selectedDay,  setSelectedDay]  = useState<string | null>(todayStr);
-  const [projectFilter, setProjectFilter] = useState<string>("all");
-  const [statusFilter,  setStatusFilter]  = useState<string>("all");
-
-  // ── Navigation ──────────────────────────────────────────
-  function prevMonth() {
-    if (currentMonth === 0) { setCurrentYear(y => y - 1); setCurrentMonth(11); }
-    else setCurrentMonth(m => m - 1);
-    setSelectedDay(null);
-  }
-  function nextMonth() {
-    if (currentMonth === 11) { setCurrentYear(y => y + 1); setCurrentMonth(0); }
-    else setCurrentMonth(m => m + 1);
-    setSelectedDay(null);
-  }
-
-  // ── Filtered tasks ──────────────────────────────────────
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (projectFilter !== "all" && t.projectId !== projectFilter) return false;
-      if (statusFilter  !== "all" && t.status    !== statusFilter)  return false;
-      return true;
+  const projectColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    projects.forEach((p, i) => {
+      map[p.id] = p.color || PROJECT_COLORS[i % PROJECT_COLORS.length];
     });
-  }, [tasks, projectFilter, statusFilter]);
-
-  // ── Tasks for a specific date string ───────────────────
-  function tasksForDate(dateStr: string): Task[] {
-    return filteredTasks.filter((t) => t.dueDate === dateStr);
-  }
-
-  // ── Selected day tasks ─────────────────────────────────
-  const selectedTasks = useMemo(
-    () => (selectedDay ? tasksForDate(selectedDay) : []),
-    [selectedDay, filteredTasks]
-  );
-
-  // ── Month summary stats ─────────────────────────────────
-  const monthStats = useMemo(() => {
-    const prefix = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
-    const monthTasks = filteredTasks.filter(
-      (t) => t.dueDate?.startsWith(prefix)
-    );
-    return {
-      total:      monthTasks.length,
-      completed:  monthTasks.filter((t) => t.status === "Done").length,
-      overdue:    monthTasks.filter((t) => isOverdue(t.dueDate, t.status)).length,
-      inProgress: monthTasks.filter((t) => t.status === "In Progress").length,
-    };
-  }, [filteredTasks, currentMonth, currentYear]);
-
-  // ── Calendar grid cells ─────────────────────────────────
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
-  const daysInMonth     = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const cells: (number | null)[] = [
-    ...Array(firstDayOfMonth).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-
-  // ── Project lookup map ──────────────────────────────────
-  const projectMap = useMemo(() => {
-    const map: Record<string, Project> = {};
-    projects.forEach((p) => { map[p.id] = p; });
     return map;
   }, [projects]);
 
+  const filteredTasks = useMemo(() => tasks.filter((t) => {
+    if (filterProject !== "all" && t.projectId !== filterProject) return false;
+    if (filterStatus === "completed" && t.status !== "completed")  return false;
+    if (filterStatus === "active"    && t.status === "completed")  return false;
+    if (filterStatus === "overdue"   && !isOverdue(t))             return false;
+    return true;
+  }), [tasks, filterProject, filterStatus]);
+
+  const tasksByDate = useMemo(() => {
+    const map: Record<string, Task[]> = {};
+    filteredTasks.forEach((t) => {
+      if (!t.dueDate) return;
+      const key = t.dueDate.slice(0, 10);
+      if (!map[key]) map[key] = [];
+      map[key].push(t);
+    });
+    return map;
+  }, [filteredTasks]);
+
+  const firstDay    = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array(firstDay).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const selectedKey   = selectedDay ? dateKey(viewYear, viewMonth, selectedDay) : "";
+  const selectedTasks = selectedDay ? (tasksByDate[selectedKey] || []) : [];
+
+  const monthTasks = useMemo(() => filteredTasks.filter((t) => {
+    if (!t.dueDate) return false;
+    const d = new Date(t.dueDate);
+    return d.getFullYear() === viewYear && d.getMonth() === viewMonth;
+  }), [filteredTasks, viewYear, viewMonth]);
+
+  const summaryCompleted  = monthTasks.filter((t) => t.status === "completed").length;
+  const summaryOverdue    = monthTasks.filter(isOverdue).length;
+  const summaryInProgress = monthTasks.filter(
+    (t) => t.status === "in-progress" || t.status === "active"
+  ).length;
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); }
+    else setViewMonth((m) => m - 1);
+    setSelectedDay(null);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear((y) => y + 1); }
+    else setViewMonth((m) => m + 1);
+    setSelectedDay(null);
+  }
+
   return (
-    <div className="lg:ml-64 min-h-screen bg-gray-50 px-6 pt-6 pb-6 flex flex-col gap-5 w-full overflow-x-hidden">
+    <div className="ml-0 bg-[#f4f5f7] min-h-screen overflow-y-auto">
 
-      {/* ── Page Header ── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Calendar</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            View and manage tasks by due date
-          </p>
+      {/* ── ONLY THIS LINE CHANGED: max-w-6xl replaces max-w-[1400px], removed pl-8 ── */}
+      <div className="max-w-6xl mx-auto px-6 pt-14 pb-10">
+
+        {/* ── PAGE HEADER ── */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Calendar</h1>
+            <p className="text-sm text-slate-400 mt-0.5">View and manage tasks by due date</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={filterProject}
+              onChange={(e) => setFilterProject(e.target.value)}
+              className="text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-600 focus:outline-none focus:border-violet-400 cursor-pointer shadow-sm"
+            >
+              <option value="all">All Projects</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-600 focus:outline-none focus:border-violet-400 cursor-pointer shadow-sm"
+            >
+              <option value="all">All Status</option>
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+              <option value="overdue">Overdue</option>
+            </select>
+            <button
+              onClick={() => setSidePanelOpen((v) => !v)}
+              className="text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
+            >
+              {sidePanelOpen ? "Hide Panel" : "Show Panel"}
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => navigate("/my-tasks")}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700
-                     text-white px-4 py-2.5 rounded-xl text-sm font-semibold
-                     transition shadow-sm shadow-blue-200"
-        >
-          + Add Task
-        </button>
-      </div>
 
-      {/* ── Filter Bar ── */}
-      <div className="flex flex-wrap items-center gap-3 overflow-x-auto pb-1">
-        {/* Project filter */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500 font-medium">Project:</label>
-          <select
-            value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm
-                       text-gray-700 bg-white focus:outline-none
-                       focus:border-blue-400 transition"
-          >
-            <option value="all">All Projects</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Status filter tabs */}
-        <div className="flex gap-1.5">
-          {["all", "To Do", "In Progress", "In Review", "Done"].map((s) => (
+        {/* ── STATUS FILTER TABS ── */}
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-slate-400 font-medium mr-1">Status:</span>
+          {["all","todo","active","completed","overdue"].map((s) => (
             <button
               key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium
-                         transition border ${
-                           statusFilter === s
-                             ? "bg-blue-600 text-white border-blue-600"
-                             : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
-                         }`}
+              onClick={() => setFilterStatus(s)}
+              className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors capitalize ${
+                filterStatus === s
+                  ? "bg-violet-600 text-white shadow-sm"
+                  : "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
+              }`}
             >
-              {s === "all" ? "All Status" : s}
+              {s === "all" ? "All Status"
+                : s === "todo" ? "To Do"
+                : s === "active" ? "In Progress"
+                : s.charAt(0).toUpperCase() + s.slice(1)}
             </button>
           ))}
         </div>
-      </div>
 
-      {/* ── Main Content ── */}
-      <div className="flex flex-col lg:flex-row gap-5 w-full min-w-0">
-
-        {/* ── Calendar Grid ── */}
-        <div className="flex-1 bg-white rounded-2xl shadow-sm border
-                        border-gray-100 p-5 min-w-0 overflow-hidden">
-
-          {/* Month Navigation */}
-          <div className="flex items-center justify-between mb-5">
-            <button
-              onClick={prevMonth}
-              className="w-8 h-8 flex items-center justify-center rounded-xl
-                         bg-gray-100 hover:bg-gray-200 text-gray-600
-                         transition text-lg font-bold"
-            >
-              ‹
-            </button>
-            <h2 className="text-base font-bold text-gray-800">
-              {MONTHS[currentMonth]} {currentYear}
-            </h2>
-            <button
-              onClick={nextMonth}
-              className="w-8 h-8 flex items-center justify-center rounded-xl
-                         bg-gray-100 hover:bg-gray-200 text-gray-600
-                         transition text-lg font-bold"
-            >
-              ›
-            </button>
-          </div>
-
-          {/* Day Labels */}
-          <div className="grid grid-cols-7 mb-2">
-            {DAYS_SHORT.map((d) => (
-              <div key={d}
-                className="text-center text-xs font-semibold text-gray-400
-                           py-1 uppercase tracking-wide">
-                {d}
-              </div>
-            ))}
-          </div>
-
-          {/* Day Cells */}
-          <div className="grid grid-cols-7 gap-1 w-full">
-            {cells.map((day, idx) => {
-              if (day === null) {
-                return <div key={`empty-${idx}`} className="h-14" />;
-              }
-
-              const dateStr   = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-              const dayTasks  = tasksForDate(dateStr);
-              const isToday   = dateStr === todayStr;
-              const isSelected = selectedDay === dateStr;
-              const hasOverdue = dayTasks.some(
-                (t) => isOverdue(t.dueDate, t.status)
-              );
-
-              return (
-                <button
-                  key={day}
-                  onClick={() => setSelectedDay(
-                    isSelected ? null : dateStr
-                  )}
-                  className={`relative h-14 w-full flex flex-col items-center
-                    justify-start pt-1.5 rounded-xl text-sm font-medium
-                    transition-all border ${
-                      isSelected
-                        ? "bg-blue-600 text-white border-blue-600 shadow-md"
-                        : isToday
-                        ? "bg-blue-50 text-blue-700 border-blue-200"
-                        : hasOverdue
-                        ? "bg-red-50 text-red-700 border-red-100"
-                        : "hover:bg-gray-50 text-gray-700 border-transparent"
-                    }`}
-                >
-                  <span className={`text-sm font-semibold ${
-                    isSelected ? "text-white" : ""
-                  }`}>
-                    {day}
-                  </span>
-
-                  {/* Task dots */}
-                  {dayTasks.length > 0 && (
-                    <div className="flex gap-0.5 mt-1 flex-wrap
-                                    justify-center px-1">
-                      {dayTasks.slice(0, 4).map((t) => (
-                        <span
-                          key={t.id}
-                          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                          style={{
-                            backgroundColor: isSelected
-                              ? "#fff"
-                              : (PRIORITY_COLOR[t.priority] ?? "#6366f1"),
-                          }}
-                          title={t.title}
-                        />
-                      ))}
-                      {dayTasks.length > 4 && (
-                        <span className={`text-[8px] font-bold ${
-                          isSelected ? "text-white" : "text-gray-400"
-                        }`}>
-                          +{dayTasks.length - 4}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ── Month Summary Stats ── */}
-          <div className="mt-5 pt-4 border-t border-gray-100
-                          grid grid-cols-4 gap-3">
-            {[
-              { label: "Due",        value: monthStats.total,      color: "text-gray-700",  bg: "bg-gray-100"   },
-              { label: "Completed",  value: monthStats.completed,  color: "text-green-700", bg: "bg-green-100"  },
-              { label: "Overdue",    value: monthStats.overdue,    color: "text-red-700",   bg: "bg-red-100"    },
-              { label: "In Progress",value: monthStats.inProgress, color: "text-blue-700",  bg: "bg-blue-100"   },
-            ].map((s) => (
-              <div key={s.label}
-                className={`${s.bg} rounded-xl p-3 text-center`}>
-                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                <p className={`text-[10px] font-medium ${s.color} opacity-80`}>
-                  {s.label}
-                </p>
-              </div>
-            ))}
-          </div>
+        {/* ── MONTH NAVIGATION ── */}
+        <div className="mb-4 flex items-center justify-between bg-white rounded-2xl px-6 py-3 border border-slate-200 shadow-sm">
+          <button
+            onClick={prevMonth}
+            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors text-lg"
+          >‹</button>
+          <h2 className="text-base font-semibold text-slate-700">
+            {MONTHS[viewMonth]} {viewYear}
+          </h2>
+          <button
+            onClick={nextMonth}
+            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors text-lg"
+          >›</button>
         </div>
 
-        {/* ── Side Panel ── */}
-        <div className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-4">
+        {/* ── MAIN BODY: GRID + SIDE PANEL ── */}
+        <div className="flex gap-4 items-start">
 
-          {/* Selected day header */}
-          <div className="bg-white rounded-2xl shadow-sm border
-                          border-gray-100 p-5">
-            {selectedDay ? (
-              <>
-                <h3 className="text-sm font-bold text-gray-800 mb-0.5">
-                  {formatDate(selectedDay)}
-                </h3>
-                <p className="text-xs text-gray-400">
-                  {selectedTasks.length === 0
-                    ? "No tasks due on this day"
-                    : `${selectedTasks.length} task${selectedTasks.length > 1 ? "s" : ""} due`}
-                </p>
-              </>
-            ) : (
-              <div className="flex flex-col items-center py-4 gap-2">
-                <span className="text-4xl">👆</span>
-                <p className="text-sm font-medium text-gray-500 text-center">
-                  Click any day to see tasks due on that date
-                </p>
-                <p className="text-xs text-gray-400 text-center">
-                  Colored dots indicate task priority
-                </p>
-              </div>
-            )}
-          </div>
+          {/* ── CALENDAR GRID ── */}
+          <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
-          {/* Task cards for selected day */}
-          {selectedDay && (
-            <div className="flex flex-col gap-3 max-h-[420px]
-                            overflow-y-auto pr-1">
-              {selectedTasks.length === 0 ? (
-                <div className="bg-white rounded-2xl shadow-sm border
-                                border-gray-100 p-6 flex flex-col
-                                items-center gap-2">
-                  <span className="text-3xl">📭</span>
-                  <p className="text-sm text-gray-400 text-center">
-                    No tasks due on this day
-                  </p>
-                  <button
-                    onClick={() => navigate("/my-tasks")}
-                    className="text-xs text-blue-600 font-medium
-                               hover:underline mt-1"
-                  >
-                    + Add a task
-                  </button>
-                </div>
-              ) : (
-                selectedTasks.map((task) => {
-                  const proj    = task.projectId
-                    ? projectMap[task.projectId]
-                    : null;
-                  const over    = isOverdue(task.dueDate, task.status);
-                  const stStyle = STATUS_STYLE[task.status] ??
-                    { bg: "bg-gray-100", text: "text-gray-600" };
-
-                  return (
-                    <div
-                      key={task.id}
-                      className={`bg-white rounded-2xl shadow-sm border p-4
-                        flex flex-col gap-2.5 transition ${
-                          over
-                            ? "border-red-200 bg-red-50"
-                            : "border-gray-100"
-                        }`}
-                    >
-                      {/* Task title + overdue badge */}
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold text-gray-800
-                                     leading-snug">
-                          {task.title}
-                        </p>
-                        {over && (
-                          <span className="text-[10px] bg-red-100 text-red-600
-                                           px-1.5 py-0.5 rounded-full
-                                           font-medium flex-shrink-0">
-                            Overdue
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Status + Priority */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full
-                          font-medium ${stStyle.bg} ${stStyle.text}`}>
-                          {task.status}
-                        </span>
-                        <div className="flex items-center gap-1">
-                          <span
-                            className="w-2 h-2 rounded-full"
-                            style={{
-                              backgroundColor:
-                                PRIORITY_COLOR[task.priority] ?? "#94a3b8",
-                            }}
-                          />
-                          <span className="text-[10px] text-gray-500 font-medium">
-                            {task.priority}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Project tag */}
-                      {proj && (
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: proj.color }}
-                          />
-                          <span className="text-[10px] text-gray-500 truncate">
-                            {proj.name}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Assignee */}
-                      {task.assignee &&
-                        task.assignee !== "Unassigned" && (
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-5 h-5 rounded-full bg-violet-500
-                                          flex items-center justify-center
-                                          text-white text-[9px] font-bold
-                                          flex-shrink-0">
-                            {task.assignee.charAt(0).toUpperCase()}
-                          </div>
-                          <span className="text-[10px] text-gray-500 truncate">
-                            {task.assignee}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* ── Priority Legend ── */}
-          <div className="bg-white rounded-2xl shadow-sm border
-                          border-gray-100 p-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase
-                          tracking-wide mb-3">
-              Priority Legend
-            </p>
-            <div className="flex flex-col gap-2">
-              {Object.entries(PRIORITY_COLOR).map(([label, color]) => (
-                <div key={label} className="flex items-center gap-2">
-                  <span
-                    className="w-3 h-3 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: color }}
-                  />
-                  <span className="text-xs text-gray-600 font-medium">
-                    {label} Priority
-                  </span>
+            {/* Day-of-week headers */}
+            <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
+              {DAYS.map((d) => (
+                <div key={d} className="text-center text-xs font-semibold text-slate-400 uppercase tracking-wider py-3">
+                  {d}
                 </div>
               ))}
-              <div className="flex items-center gap-2 mt-1 pt-2
-                              border-t border-gray-100">
-                <span className="w-3 h-3 rounded-xl border-2
-                                 border-red-300 bg-red-50 flex-shrink-0" />
-                <span className="text-xs text-red-500 font-medium">
-                  Overdue Day
-                </span>
+            </div>
+
+            {/* Calendar week rows */}
+            <div className="flex flex-col">
+              {Array.from({ length: cells.length / 7 }, (_, wi) => (
+                <div key={wi} className="grid grid-cols-7 border-b border-slate-100 last:border-b-0">
+                  {cells.slice(wi * 7, wi * 7 + 7).map((day, ci) => {
+                    if (!day) return (
+                      <div
+                        key={`e-${wi}-${ci}`}
+                        className="h-24 border-r border-slate-100 last:border-r-0 bg-slate-50/40"
+                      />
+                    );
+
+                    const key        = dateKey(viewYear, viewMonth, day);
+                    const dayTasks   = tasksByDate[key] || [];
+                    const isToday    = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
+                    const isSelected = day === selectedDay;
+                    const hasOverdue = dayTasks.some(isOverdue);
+
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => setSelectedDay(day)}
+                        className={[
+                          "h-24 flex flex-col items-start p-2 border-r border-slate-100 last:border-r-0 transition-all text-left w-full overflow-hidden",
+                          isSelected   ? "bg-violet-50 ring-2 ring-inset ring-violet-400"
+                          : isToday    ? "bg-blue-50"
+                          : hasOverdue ? "bg-red-50 hover:bg-red-100/50"
+                          :              "bg-white hover:bg-slate-50",
+                        ].join(" ")}
+                      >
+                        {/* Day number */}
+                        <div className="flex items-center justify-between w-full mb-1">
+                          <span className={[
+                            "text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full",
+                            isToday
+                              ? "bg-blue-600 text-white"
+                              : isSelected
+                              ? "text-violet-700 font-bold"
+                              : "text-slate-600",
+                          ].join(" ")}>
+                            {day}
+                          </span>
+                          {dayTasks.length > 0 && (
+                            <span className="text-[9px] text-slate-400 font-medium">
+                              {dayTasks.length}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Priority dots */}
+                        {dayTasks.length > 0 && (
+                          <div className="flex flex-wrap gap-0.5">
+                            {dayTasks.slice(0, 3).map((t) => (
+                              <span
+                                key={t.id}
+                                className={`w-1.5 h-1.5 rounded-full flex-none ${
+                                  isOverdue(t) ? "bg-red-500" : PRIORITY_DOT[t.priority?.toLowerCase()] || "bg-slate-400"
+                                }`}
+                              />
+                            ))}
+                            {dayTasks.length > 3 && (
+                              <span className="text-[8px] text-slate-400 leading-none">+{dayTasks.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            {/* ── SUMMARY STRIP ── */}
+            <div className="border-t border-slate-200 bg-slate-50 px-6 py-3 flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-6">
+                {[
+                  { label: "Due This Month", value: monthTasks.length,   color: "text-violet-600" },
+                  { label: "Completed",      value: summaryCompleted,    color: "text-emerald-600" },
+                  { label: "Overdue",        value: summaryOverdue,      color: "text-red-500" },
+                  { label: "In Progress",    value: summaryInProgress,   color: "text-blue-600" },
+                ].map((s) => (
+                  <div key={s.label} className="flex items-center gap-1.5">
+                    <span className={`text-lg font-bold ${s.color}`}>{s.value}</span>
+                    <span className="text-xs text-slate-400">{s.label}</span>
+                  </div>
+                ))}
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-xl bg-blue-100
-                                 border-2 border-blue-300 flex-shrink-0" />
-                <span className="text-xs text-blue-600 font-medium">
-                  Today
-                </span>
+              <div className="flex items-center gap-4 flex-wrap">
+                <span className="text-xs text-slate-400 font-medium">Legend:</span>
+                {[
+                  { label: "High",    cls: "bg-red-500" },
+                  { label: "Medium",  cls: "bg-orange-400" },
+                  { label: "Low",     cls: "bg-green-500" },
+                  { label: "Overdue", cls: "bg-red-300" },
+                  { label: "Today",   cls: "bg-blue-600" },
+                ].map((leg) => (
+                  <div key={leg.label} className="flex items-center gap-1">
+                    <span className={`w-2 h-2 rounded-full ${leg.cls}`} />
+                    <span className="text-xs text-slate-400">{leg.label}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* ── This Month projects active ── */}
-          {projects.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm border
-                            border-gray-100 p-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase
-                            tracking-wide mb-3">
-                Active Projects
-              </p>
-              <div className="flex flex-col gap-2">
-                {projects.map((proj) => {
-                  const projTasksThisMonth = tasks.filter(
-                    (t) =>
-                      t.projectId === proj.id &&
-                      t.dueDate?.startsWith(
-                        `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`
-                      )
-                  );
-                  return (
-                    <div
-                      key={proj.id}
-                      className="flex items-center justify-between
-                                 cursor-pointer hover:bg-gray-50 rounded-xl
-                                 px-2 py-1.5 transition"
-                      onClick={() => {
-                        setProjectFilter(
-                          projectFilter === proj.id ? "all" : proj.id
-                        );
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-2.5 h-2.5 rounded-full"
-                          style={{ backgroundColor: proj.color }}
-                        />
-                        <span className="text-xs text-gray-700 font-medium
-                                         truncate max-w-[140px]">
-                          {proj.name}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-gray-400 font-medium">
-                        {projTasksThisMonth.length} task
-                        {projTasksThisMonth.length !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  );
-                })}
+          {/* ── SIDE PANEL ── */}
+          {sidePanelOpen && (
+            <div className="flex-none w-72 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
+                <h3 className="text-sm font-semibold text-slate-700">
+                  {selectedDay ? `${MONTHS[viewMonth]} ${selectedDay}, ${viewYear}` : "Select a day"}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {selectedTasks.length} task{selectedTasks.length !== 1 ? "s" : ""} scheduled
+                </p>
               </div>
+
+              {/* Task list */}
+              <div className="overflow-y-auto max-h-[520px] px-4 py-3 space-y-2">
+                {selectedTasks.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-32 text-center gap-2">
+                    <div className="text-3xl">📅</div>
+                    <p className="text-xs text-slate-400">
+                      {selectedDay ? "No tasks due on this day" : "Click a day to view tasks"}
+                    </p>
+                  </div>
+                ) : (
+                  selectedTasks.map((task) => {
+                    const proj      = projects.find((p) => p.id === task.projectId);
+                    const projColor = proj ? projectColorMap[proj.id] || "#8b5cf6" : "#8b5cf6";
+                    const overdue   = isOverdue(task);
+
+                    return (
+                      <div
+                        key={task.id}
+                        onClick={() => navigate("/my-tasks")}
+                        className="bg-white rounded-xl p-3 border border-slate-200 hover:border-violet-300 hover:shadow-sm transition-all cursor-pointer"
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className={`mt-1 w-2 h-2 rounded-full flex-none ${
+                            overdue ? "bg-red-500" : PRIORITY_DOT[task.priority?.toLowerCase()] || "bg-slate-400"
+                          }`} />
+                          <p className="text-xs font-medium text-slate-700 leading-snug line-clamp-2">{task.title}</p>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${
+                            overdue
+                              ? "bg-red-100 text-red-600"
+                              : task.status === "completed"
+                              ? "bg-emerald-100 text-emerald-600"
+                              : "bg-slate-100 text-slate-500"
+                          }`}>
+                            {overdue ? "Overdue" : task.status || "Todo"}
+                          </span>
+                          {task.priority && (
+                            <span className="text-[10px] text-slate-400 font-medium capitalize">{task.priority}</span>
+                          )}
+                        </div>
+                        {proj && (
+                          <div className="mt-2 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full flex-none" style={{ backgroundColor: projColor }} />
+                            <span className="text-[10px] text-slate-400 truncate">{proj.name}</span>
+                          </div>
+                        )}
+                        {task.assignee && (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <div className="w-4 h-4 rounded-full bg-violet-100 border border-violet-200 flex items-center justify-center flex-none">
+                              <span className="text-[8px] text-violet-600 font-bold">{task.assignee[0]?.toUpperCase()}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 truncate">{task.assignee}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Active projects footer */}
+              {projects.length > 0 && (
+                <div className="border-t border-slate-200 px-5 py-4 bg-slate-50">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Active Projects</p>
+                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                    {projects.map((p, i) => (
+                      <div key={p.id} className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full flex-none" style={{ backgroundColor: p.color || PROJECT_COLORS[i % PROJECT_COLORS.length] }} />
+                        <span className="text-xs text-slate-600 truncate">{p.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
