@@ -12,7 +12,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from "firebase/auth";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { auth, db } from "../lib/firebase/config";
 
 interface AuthContextType {
@@ -22,6 +22,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   signOut: () => Promise<void>;
   signOutUser: () => Promise<void>;
+  workspaceId: string | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -31,11 +32,19 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
   signOut: async () => {},
   signOutUser: async () => {},
+  workspaceId: null,
 });
 
-async function ensureUserProfile(firebaseUser: User): Promise<void> {
+async function ensureUserProfile(firebaseUser: User): Promise<string> {
   try {
     const userRef = doc(db, "users", firebaseUser.uid);
+    const snap = await getDoc(userRef);
+    let workspaceId = "";
+    if (snap.exists() && snap.data().workspaceId) {
+      workspaceId = snap.data().workspaceId;
+    } else {
+      workspaceId = "WF-" + String(Math.floor(Math.random() * 900) + 100);
+    }
     await setDoc(
       userRef,
       {
@@ -45,24 +54,29 @@ async function ensureUserProfile(firebaseUser: User): Promise<void> {
         photoURL: firebaseUser.photoURL ?? "",
         plan: "free",
         updatedAt: serverTimestamp(),
+        workspaceId,
       },
       { merge: true }
     );
     console.log("[Auth] ✅ User doc ensured: users/" + firebaseUser.uid);
+    return workspaceId;
   } catch (err) {
     console.error("[Auth] ❌ Failed to ensure user profile:", err);
+    return "";
   }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]       = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         // Ensure user document exists in Firestore FIRST
-        await ensureUserProfile(firebaseUser);
+        const wid = await ensureUserProfile(firebaseUser);
+        setWorkspaceId(wid);
         // Set user BEFORE setting loading false
         // This guarantees AppDataContext sees a valid uid immediately
         setUser(firebaseUser);
@@ -70,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log("[Auth] ✅ Signed in:", firebaseUser.uid);
       } else {
         // Clear user first, then loading
+        setWorkspaceId(null);
         setUser(null);
         setLoading(false);
         console.log("[Auth] User signed out");
@@ -91,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout, signOut: logout, signOutUser: logout }}>
+    <AuthContext.Provider value={{ user, loading, workspaceId, signInWithGoogle, logout, signOut: logout, signOutUser: logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -229,6 +229,7 @@ export default function ProjectsPage() {
                           <p className="font-semibold text-slate-800 group-hover:text-violet-600 transition-colors">
                             {p.name}
                           </p>
+                          {p.code && <p className="text-xs text-slate-400 mt-0.5">{p.code}</p>}
                           <span className={`inline-block mt-0.5 text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusColor(p.status)} capitalize`}>
                             {p.status || "Active"}
                           </span>

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { useAuth }        from "../context/AuthContext";
+import { useAppData }     from "../context/AppDataContext";
 import { createProject }  from "../lib/firebase/projects";
 
 interface Props {
@@ -26,6 +27,7 @@ const PRIORITIES = [
 
 export default function CreateProjectModal({ onClose }: Props) {
   const { user } = useAuth();
+  const { projects = [] } = useAppData() as any;
 
   // ── Step (never driven by external state so never resets) ──
   const [step, setStep] = useState<1 | 2>(1);
@@ -93,7 +95,9 @@ export default function CreateProjectModal({ onClose }: Props) {
       setError("");
 
       try {
+        const projectCode = "PRJ-" + String(projects.length + 1).padStart(3, "0");
         const id = await createProject(user.uid, {
+          code:        projectCode,
           name:        name.trim(),
           description: description.trim(),
           color,
@@ -101,7 +105,7 @@ export default function CreateProjectModal({ onClose }: Props) {
           priority,
           dueDate:     dueDate || null,
         });
-        console.log("[CreateProjectModal] ✅ Project saved:", id);
+        console.log("[CreateProjectModal] ✅ Project saved:", id, "with code", projectCode);
         onClose();   // ← ONLY place onClose is called on success
       } catch (err) {
         console.error("[CreateProjectModal] ❌ Save error:", err);
@@ -109,7 +113,7 @@ export default function CreateProjectModal({ onClose }: Props) {
         setSaving(false);
       }
     },
-    [step, user, name, description, color, status, priority, dueDate, onClose]
+    [step, user, projects, name, description, color, status, priority, dueDate, onClose]
   );
 
   // Prevent Enter key in inputs from triggering any implicit submission.

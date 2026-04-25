@@ -7,6 +7,7 @@ import {
 import { db }          from "../lib/firebase/config";
 import { useAuth }     from "../context/AuthContext";
 import { useAppData }  from "../context/AppDataContext";
+import TaskDetailPanel, { Task as DetailTask } from "../components/TaskDetailPanel";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface Task {
@@ -18,6 +19,7 @@ interface Task {
   dueDate:     string;
   description: string;
   createdAt:   any;
+  taskCode?:   string;
 }
 
 const STATUS_COLUMNS = ["To Do", "In Progress", "In Review", "Done"] as const;
@@ -51,7 +53,7 @@ const emptyTask = () => ({
 const ProjectPage = () => {
   const { id }          = useParams<{ id: string }>();
   const { user }        = useAuth();
-  const { projects }    = useAppData();
+  const { projects, tasks: allTasks = [] } = useAppData() as any;
   const navigate        = useNavigate();
 
   const [tasks,       setTasks]       = useState<Task[]>([]);
@@ -62,6 +64,7 @@ const ProjectPage = () => {
   const [editTask,    setEditTask]    = useState<Task | null>(null);
   const [form,        setForm]        = useState(emptyTask());
   const [saving,      setSaving]      = useState(false);
+  const [detailTask, setDetailTask] = useState<DetailTask | null>(null);
 
   const project = projects.find(p => p.id === id);
 
@@ -137,8 +140,12 @@ const ProjectPage = () => {
           ...form, updatedAt: serverTimestamp(),
         });
       } else {
+        const taskCode = "TSK-" + String(allTasks.length + 1).padStart(3, "0");
+        const projectCode = (project as any)?.code || "";
         await addDoc(collection(db, "users", user.uid, "tasks"), {
           ...form,
+          taskCode,
+          projectCode: projectCode || null,
           assignee: form.assignee.trim(),
           projectId: id,
           ownerId:   user.uid,
@@ -215,6 +222,11 @@ const ProjectPage = () => {
                 <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
                   {project.name}
                 </h1>
+                {(project as any).code && (
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">
+                    {(project as any).code}
+                  </p>
+                )}
                 {project.description && (
                   <p className="text-sm text-gray-500 mt-0.5 max-w-lg">
                     {project.description}
@@ -363,10 +375,11 @@ const ProjectPage = () => {
             {filtered.length > 0 ? (
               filtered.map(task => (
                 <div key={task.id}
-                     className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/70 transition-colors items-center group">
+                     onClick={() => setDetailTask(task as unknown as DetailTask)}
+                     className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/70 transition-colors items-center group cursor-pointer">
                   {/* Title + checkbox */}
                   <div className="flex items-center gap-3">
-                    <button onClick={() => cycleStatus(task)}
+                    <button onClick={(e) => { e.stopPropagation(); cycleStatus(task); }}
                             className={`w-5 h-5 rounded-full border-2 flex items-center
                                         justify-center flex-shrink-0 transition-all ${
                               task.status === "Done"
@@ -387,6 +400,7 @@ const ProjectPage = () => {
                           ? "line-through text-gray-400"
                           : "text-gray-800"
                       }`}>
+                        {task.taskCode && <span className="text-xs text-slate-400 mr-2">{task.taskCode}</span>}
                         {task.title}
                       </p>
                       {task.description && (
@@ -455,11 +469,11 @@ const ProjectPage = () => {
 
                   {/* Actions */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => openEdit(task)}
+                    <button onClick={(e) => { e.stopPropagation(); openEdit(task); }}
                             className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors text-xs">
                       ✏️
                     </button>
-                    <button onClick={() => handleDelete(task.id)}
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(task.id); }}
                             className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors text-xs">
                       🗑
                     </button>
@@ -512,11 +526,12 @@ const ProjectPage = () => {
                     {colTasks.map(task => (
                       <div key={task.id}
                            className="bg-gray-50 border border-gray-100 rounded-xl p-3 group hover:shadow-sm transition-all cursor-pointer"
-                           onClick={() => openEdit(task)}>
+                           onClick={() => setDetailTask(task as unknown as DetailTask)}>
                         <p className={`text-sm font-medium text-gray-800
                                        leading-snug mb-2 ${
                           task.status === "Done" ? "line-through text-gray-400" : ""
                         }`}>
+                          {task.taskCode && <span className="block text-[10px] text-slate-400 mb-0.5">{task.taskCode}</span>}
                           {task.title}
                         </p>
                         <div className="flex items-center justify-between">
@@ -686,6 +701,17 @@ const ProjectPage = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {detailTask && (
+        <TaskDetailPanel
+          task={detailTask}
+          onClose={() => setDetailTask(null)}
+          onEdit={(t) => {
+            setDetailTask(null);
+            openEdit(t as unknown as Task);
+          }}
+        />
       )}
     </div>
   );

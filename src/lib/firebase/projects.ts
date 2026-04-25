@@ -28,6 +28,7 @@ export interface NewProject {
   status?:      string;
   priority?:    string;
   dueDate?:     string | null;
+  code?:        string;
 }
 
 async function ensureUserDocExists(uid: string): Promise<void> {
@@ -54,6 +55,7 @@ export async function createProject(
     status:      data.status   ?? "active",
     priority:    data.priority ?? "Medium",
     dueDate:     data.dueDate  ?? null,
+    code:        data.code     ?? null,
     uid,
     createdAt:   serverTimestamp(),
     updatedAt:   serverTimestamp(),

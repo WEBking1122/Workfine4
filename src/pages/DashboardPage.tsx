@@ -39,7 +39,7 @@ const emptyTask = () => ({
 const COLORS_P = ["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899"];
 
 const DashboardPage = () => {
-  const { user }                                      = useAuth();
+  const { user, workspaceId }                         = useAuth();
   const { projects, tasks, teamMembers, notes, files } = useAppData();
   const navigate                                       = useNavigate();
 
@@ -125,8 +125,17 @@ const DashboardPage = () => {
     if (!user?.uid || !taskForm.title.trim()) return;
     setSaving(true);
     try {
+      const taskCode = "TSK-" + String(tasks.length + 1).padStart(3, "0");
+      let projectCode = "";
+      if (taskForm.projectId) {
+         const p = projects.find((x: any) => x.id === taskForm.projectId);
+         projectCode = p?.code || "";
+      }
+
       await addDoc(collection(db, "users", user.uid, "tasks"), {
         ...taskForm,
+        taskCode,
+        projectCode: projectCode || null,
         ownerId:   user.uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -287,6 +296,7 @@ const DashboardPage = () => {
                       <span className="text-gray-300 text-sm flex-shrink-0">⏱</span>
                       <div className="min-w-0">
                         <p className="text-xs font-medium text-gray-700 truncate">
+                          {t.taskCode && <span className="text-slate-400 mr-1">{t.taskCode}</span>}
                           {t.title}
                         </p>
                         <p className={`text-[10px] ${
@@ -509,7 +519,8 @@ const DashboardPage = () => {
                         <p className="text-sm font-semibold text-gray-800 truncate group-hover:text-blue-600 transition-colors">
                           {p.name}
                         </p>
-                        <p className="text-[10px] text-gray-400 capitalize">
+                        {p.code && <p className="text-xs text-slate-400 truncate">{p.code}</p>}
+                        <p className="text-[10px] text-gray-400 capitalize mt-0.5">
                           {p.status ?? "active"}
                         </p>
                       </div>

@@ -7,7 +7,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Bell, HelpCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 interface NavbarProps {
   title?: string;
@@ -20,9 +20,10 @@ const PRIORITY_COLOR: Record<string, string> = {
 };
 
 export default function Navbar({ title = "Overview" }: NavbarProps) {
-  const { user } = useAuth();
+  const { user, workspaceId } = useAuth();
   const { tasks = [], projects = [] } = useAppData() as any;
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -71,17 +72,39 @@ export default function Navbar({ title = "Overview" }: NavbarProps) {
     setIsOpen(val.length >= 2);
   };
 
+  let pageName = "Dashboard";
+  const p = location.pathname;
+  if (p === "/" || p === "/dashboard") pageName = "Dashboard";
+  else if (p === "/calendar") pageName = "Calendar";
+  else if (p === "/insights") pageName = "Insights";
+  else if (p === "/my-tasks") pageName = "My Tasks";
+  else if (p === "/settings") pageName = "Settings";
+  else if (p === "/projects") pageName = "Projects";
+  else if (p.startsWith("/projects/")) {
+    const id = p.split("/")[2];
+    const project = projects.find((x: any) => x.id === id);
+    if (project) {
+       pageName = `Projects / ${project.code ? project.code + ' - ' : ''}${project.name}`;
+    } else {
+       pageName = "Projects";
+    }
+  }
+
   return (
     <header className="h-16 flex items-center justify-between px-8 bg-white border-b border-slate-200 sticky top-0 z-40">
       <div className="flex items-center gap-6">
         <div>
           <h1 className="text-xl font-semibold text-slate-800">{title}</h1>
           <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="font-mono">SLV-882</span>
+            <span className="font-mono">{workspaceId || "WF-000"}</span>
             <span className="text-slate-300">/</span>
             <span>Workspace</span>
-            <span className="text-slate-300">/</span>
-            <span>Projects</span>
+            {pageName.split(' / ').map((part, i) => (
+              <React.Fragment key={i}>
+                <span className="text-slate-300">/</span>
+                <span>{part}</span>
+              </React.Fragment>
+            ))}
           </div>
         </div>
       </div>

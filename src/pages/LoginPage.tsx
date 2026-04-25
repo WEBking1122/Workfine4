@@ -222,7 +222,7 @@ export default function LoginPage() {
           <p className="text-slate-400 text-sm mb-3 text-center px-4">
             {mode === 'signin' 
               ? 'Enter your credentials to access your vault.' 
-              : 'Start your secure journey with WorkFine today.'}
+              : 'Start your secure journey with Workfine today.'}
           </p>
 
           {/* Tab switcher */}
@@ -399,12 +399,12 @@ export default function LoginPage() {
           </AnimatePresence>
 
           <p className="mt-3 text-[10px] text-center text-slate-500 leading-relaxed max-w-[280px]">
-            By continuing, you agree to VaultFlow's <span className="text-success hover:underline cursor-pointer">Terms of Service</span> and <span className="text-success hover:underline cursor-pointer">Privacy Policy</span>.
+            By continuing, you agree to Workfine's <span className="text-success hover:underline cursor-pointer">Terms of Service</span> and <span className="text-success hover:underline cursor-pointer">Privacy Policy</span>.
           </p>
         </div>
 
         <p className="mt-4 text-center text-[10px] text-slate-600 font-black uppercase tracking-[0.3em]">
-          Secure Terminal &copy; {new Date().getFullYear()} WorkFine
+          Secure Terminal &copy; {new Date().getFullYear()} Workfine
         </p>
       </motion.div>
     </div>

@@ -1,7 +1,10 @@
 import React, { useState, useMemo } from "react";
 import { useAppData } from "../context/AppDataContext";
-import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../lib/firebase/config";
 import { getOverdueTasks } from "../utils/overdueUtils";
+import TaskDetailPanel, { Task as DetailTask } from "../components/TaskDetailPanel";
 
 interface Task {
   id: string;
@@ -11,6 +14,7 @@ interface Task {
   projectId?: string;
   assignee?: string;
   dueDate?: string;
+  taskCode?: string;
 }
 
 interface Project {
@@ -60,7 +64,6 @@ export default function CalendarPage() {
     tasks: Task[];
     projects: Project[];
   };
-  const navigate = useNavigate();
 
   const today = new Date();
   const [viewYear,      setViewYear]      = useState(today.getFullYear());
@@ -69,6 +72,38 @@ export default function CalendarPage() {
   const [filterProject, setFilterProject] = useState("all");
   const [filterStatus,  setFilterStatus]  = useState("all");
   const [sidePanelOpen, setSidePanelOpen] = useState(true);
+  const [detailTask, setDetailTask] = useState<DetailTask | null>(null);
+  const { user } = useAuth();
+  const [editTask, setEditTask] = useState<DetailTask | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: "", description: "", status: "To Do",
+    priority: "Medium", assignee: "", dueDate: "",
+  });
+  const [editSaving, setEditSaving] = useState(false);
+
+  function openEdit(t: DetailTask) {
+    setEditTask(t);
+    setEditForm({
+      title: t.title ?? "",
+      description: t.description ?? "",
+      status: t.status ?? "To Do",
+      priority: t.priority ?? "Medium",
+      assignee: t.assignee ?? "",
+      dueDate: t.dueDate ?? "",
+    });
+  }
+
+  async function saveEdit() {
+    if (!user?.uid || !editTask || !editForm.title.trim()) return;
+    setEditSaving(true);
+    try {
+      await updateDoc(
+        doc(db, "users", user.uid, "tasks", editTask.id),
+        { ...editForm, updatedAt: serverTimestamp() }
+      );
+      setEditTask(null);
+    } finally { setEditSaving(false); }
+  }
 
   // Shared overdue detection — recomputes on every Firestore push
   const overdueTasks = useMemo(() => getOverdueTasks(tasks), [tasks]);
@@ -388,14 +423,17 @@ export default function CalendarPage() {
                     return (
                       <div
                         key={task.id}
-                        onClick={() => navigate("/my-tasks")}
+                        onClick={() => setDetailTask(task as unknown as DetailTask)}
                         className="bg-white rounded-xl p-3 border border-slate-200 hover:border-violet-300 hover:shadow-sm transition-all cursor-pointer"
                       >
                         <div className="flex items-start gap-2">
                           <span className={`mt-1 w-2 h-2 rounded-full flex-none ${
                             overdue ? "bg-red-500" : PRIORITY_DOT[task.priority?.toLowerCase()] || "bg-slate-400"
                           }`} />
-                          <p className="text-xs font-medium text-slate-700 leading-snug line-clamp-2">{task.title}</p>
+                          <p className="text-xs font-medium text-slate-700 leading-snug line-clamp-2">
+                            {task.taskCode && <span className="text-slate-400 mr-1">{task.taskCode}</span>}
+                            {task.title}
+                          </p>
                         </div>
 
                         {task.dueDate && (
@@ -458,6 +496,116 @@ export default function CalendarPage() {
           )}
         </div>
       </div>
+
+      {detailTask && (
+        <TaskDetailPanel
+          task={detailTask}
+          onClose={() => setDetailTask(null)}
+          onEdit={(t) => {
+            setDetailTask(null);
+            openEdit(t);
+          }}
+        />
+      )}
+
+      {editTask && (
+        <div className="fixed inset-0 bg-black/50 z-[90] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="px-6 pt-6 pb-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Edit Task</h2>
+              <button onClick={() => setEditTask(null)}
+                      className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">
+                  Task Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="What needs to be done?"
+                  value={editForm.title}
+                  onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Description</label>
+                <textarea
+                  placeholder="Add more details..."
+                  value={editForm.description}
+                  onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))}
+                  rows={2}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Status</label>
+                  <select
+                    value={editForm.status}
+                    onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    {["To Do","In Progress","In Review","Done"].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Priority</label>
+                  <select
+                    value={editForm.priority}
+                    onChange={e => setEditForm(f => ({ ...f, priority: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="Low">🟢 Low</option>
+                    <option value="Medium">🟡 Medium</option>
+                    <option value="High">🔴 High</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Assignee</label>
+                  <input
+                    type="text"
+                    placeholder="Name or email"
+                    value={editForm.assignee}
+                    onChange={e => setEditForm(f => ({ ...f, assignee: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Due Date</label>
+                  <input
+                    type="date"
+                    value={editForm.dueDate}
+                    onChange={e => setEditForm(f => ({ ...f, dueDate: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-2">
+              <button
+                onClick={() => setEditTask(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEdit}
+                disabled={!editForm.title.trim() || editSaving}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {editSaving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
