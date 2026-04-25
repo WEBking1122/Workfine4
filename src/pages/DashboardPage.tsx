@@ -125,17 +125,19 @@ const DashboardPage = () => {
     if (!user?.uid || !taskForm.title.trim()) return;
     setSaving(true);
     try {
-      const taskCode = "TSK-" + String(tasks.length + 1).padStart(3, "0");
-      let projectCode = "";
+      let taskCode = "";
       if (taskForm.projectId) {
          const p = projects.find((x: any) => x.id === taskForm.projectId);
-         projectCode = p?.code || "";
+         const pCode = p?.code || "WF-000";
+         const pTasks = tasks.filter(t => t.projectId === taskForm.projectId);
+         taskCode = `${pCode}-T${pTasks.length + 1}`;
+      } else {
+         taskCode = `${workspaceId || "WF-000"}-T${tasks.length + 1}`;
       }
 
       await addDoc(collection(db, "users", user.uid, "tasks"), {
         ...taskForm,
         taskCode,
-        projectCode: projectCode || null,
         ownerId:   user.uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),

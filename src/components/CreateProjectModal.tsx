@@ -95,7 +95,7 @@ export default function CreateProjectModal({ onClose }: Props) {
       setError("");
 
       try {
-        const projectCode = "PRJ-" + String(projects.length + 1).padStart(3, "0");
+        const projectCode = "WF-" + String(projects.length + 1).padStart(3, "0");
         const id = await createProject(user.uid, {
           code:        projectCode,
           name:        name.trim(),
