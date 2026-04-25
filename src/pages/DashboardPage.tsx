@@ -40,7 +40,7 @@ const COLORS_P = ["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899"];
 
 const DashboardPage = () => {
   const { user, workspaceId }                         = useAuth();
-  const { projects, tasks, teamMembers, notes, files } = useAppData();
+  const { projects, tasks, teamMembers, notes, files, members } = useAppData();
   const navigate                                       = useNavigate();
 
   // ── Modals ──────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ const DashboardPage = () => {
   const totalProjects   = projects.length;
   const activeTasks     = tasks.filter(t => t.status !== "Done").length;
   const completedTasks  = tasks.filter(t => t.status === "Done").length;
-  const totalMembers    = teamMembers.length;
+  const totalMembers    = members.length > 0 ? members.length : teamMembers.length;
   const now             = new Date();
 
   const overdueTasks = useMemo(() => getOverdueTasks(tasks), [tasks]);
@@ -151,10 +151,10 @@ const DashboardPage = () => {
   const displayName = user?.displayName ?? user?.email?.split("@")[0] ?? "User";
 
   const STAT_CARDS = [
-    { label: "Total Projects",   value: totalProjects,  color: "text-violet-600",  bg: "bg-violet-100", icon: <FolderKanban className="w-6 h-6 text-violet-600" /> },
-    { label: "Active Tasks",     value: activeTasks,    color: "text-amber-600",   bg: "bg-amber-50",   icon: "⏳" },
-    { label: "Completed Tasks",  value: completedTasks, color: "text-emerald-600", bg: "bg-emerald-50", icon: "✅" },
-    { label: "Team Members",     value: totalMembers,   color: "text-purple-600",  bg: "bg-purple-50",  icon: "👥" },
+    { label: "Total Projects",   value: totalProjects,  color: "text-violet-600",  bg: "bg-violet-100", icon: <FolderKanban className="w-6 h-6 text-violet-600" />, onClick: () => navigate("/projects") },
+    { label: "Active Tasks",     value: activeTasks,    color: "text-amber-600",   bg: "bg-amber-50",   icon: "⏳", onClick: () => navigate("/my-tasks") },
+    { label: "Completed Tasks",  value: completedTasks, color: "text-emerald-600", bg: "bg-emerald-50", icon: "✅", onClick: undefined },
+    { label: "Team Members",     value: totalMembers,   color: "text-purple-600",  bg: "bg-purple-50",  icon: "👥", onClick: () => navigate("/team") },
   ];
 
   return (
@@ -205,7 +205,8 @@ const DashboardPage = () => {
         <div className="grid grid-cols-4 gap-3 mb-4">
           {STAT_CARDS.map(s => (
             <div key={s.label}
-                 className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 flex items-center gap-3">
+                 onClick={s.onClick}
+                 className={`bg-white border border-gray-200 rounded-xl shadow-sm p-4 flex items-center gap-3 ${s.onClick ? 'cursor-pointer hover:shadow-md hover:border-blue-200 transition-all' : ''}`}>
               <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center
                               justify-center text-lg flex-shrink-0`}>
                 {s.icon}

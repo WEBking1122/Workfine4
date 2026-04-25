@@ -17,6 +17,8 @@ import SettingsPage from './pages/SettingsPage';
 import ProjectPage from './pages/ProjectPage';
 import ProjectsPage from './pages/ProjectsPage';
 import CalendarPage from './pages/CalendarPage';
+import TeamPage from './pages/TeamPage';
+import JoinWorkspacePage from './pages/JoinWorkspacePage';
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -54,7 +56,7 @@ export default function App() {
       <AppDataProvider>
         <Router>
           <Routes>
-            {/* Public route — no shell */}
+            {/* Public routes — no shell */}
             <Route
               path="/login"
               element={
@@ -63,6 +65,9 @@ export default function App() {
                 </PublicRoute>
               }
             />
+
+            {/* Join workspace — public, no shell */}
+            <Route path="/join/:inviteCode" element={<JoinWorkspacePage />} />
 
             {/* All protected routes — Sidebar + AppShell applied automatically */}
             <Route element={<ProtectedRoute />}>
@@ -74,6 +79,7 @@ export default function App() {
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/:id" element={<ProjectPage />} />
+                <Route path="/team" element={<TeamPage />} />
                 {/* ✅ ADD ALL FUTURE PAGES HERE — one line each */}
               </Route>
             </Route>

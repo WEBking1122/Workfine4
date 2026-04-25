@@ -68,6 +68,16 @@ export default function LoginPage() {
 
   // ─── Sign-in ────────────────────────────────────────────────────────────────
 
+  function redirectAfterAuth() {
+    const pending = localStorage.getItem('pendingInviteCode');
+    if (pending) {
+      localStorage.removeItem('pendingInviteCode');
+      navigate('/join/' + pending);
+    } else {
+      navigate('/');
+    }
+  }
+
   const handleSignIn = async () => {
     resetState();
 
@@ -79,7 +89,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await authService.signInWithEmail(email.trim(), password);
-      navigate('/');
+      redirectAfterAuth();
     } catch (err: any) {
       const code: string = err?.code ?? '';
       const mapped = mapAuthError(code);
@@ -132,7 +142,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await authService.signUpWithEmail(email.trim(), password);
-      navigate('/');
+      redirectAfterAuth();
     } catch (err: any) {
       const code: string = err?.code ?? '';
       const mapped = mapAuthError(code);

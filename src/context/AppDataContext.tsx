@@ -6,7 +6,13 @@ import React, {
   useRef,
   ReactNode,
 } from "react";
-import { onSnapshot, collection } from "firebase/firestore";
+import {
+  onSnapshot,
+  collection,
+  query,
+  where,
+  doc,
+} from "firebase/firestore";
 import { db } from "../lib/firebase/config";
 import { useAuth } from "./AuthContext";
 import { subscribeToProjects, Project } from "../lib/firebase/projects";
@@ -29,6 +35,51 @@ interface TeamMember {
   [key: string]: unknown;
 }
 
+interface WorkspaceMember {
+  userId: string;
+  email: string;
+  displayName: string;
+  avatar: string;
+  avatarColor: string;
+  role: "owner" | "admin" | "member" | "viewer";
+  status: "active" | "pending" | "suspended";
+  joinedAt: any;
+  invitedBy: string;
+  lastActive: any;
+  permissions: {
+    canCreateProjects: boolean;
+    canDeleteProjects: boolean;
+    canInviteMembers: boolean;
+    canManageTasks: boolean;
+  };
+}
+
+interface PendingInvite {
+  id: string;
+  email: string;
+  role: "admin" | "member" | "viewer";
+  status: "pending" | "accepted" | "declined" | "expired";
+  invitedBy: string;
+  invitedByName: string;
+  workspaceId: string;
+  workspaceName: string;
+  inviteCode: string;
+  createdAt: any;
+  expiresAt: any;
+  acceptedAt: any;
+}
+
+interface WorkspaceData {
+  id: string;
+  workspaceId: string;
+  name: string;
+  ownerId: string;
+  ownerEmail: string;
+  createdAt: any;
+  memberCount: number;
+  plan: "free" | "pro";
+}
+
 interface Note {
   id: string;
   content: string;
@@ -43,6 +94,11 @@ interface AppDataContextType {
   projects: Project[];
   loading: boolean;
   files: any[];
+  // Workspace team data
+  members: WorkspaceMember[];
+  pendingInvites: PendingInvite[];
+  memberCount: number;
+  workspaceData: WorkspaceData | null;
 }
 
 const AppDataContext = createContext<AppDataContextType>({
@@ -52,26 +108,28 @@ const AppDataContext = createContext<AppDataContextType>({
   projects: [],
   loading: true,
   files: [],
+  members: [],
+  pendingInvites: [],
+  memberCount: 0,
+  workspaceData: null,
 });
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
-
-  // Extract uid as a plain string — this is the critical fix.
-  // useEffect depends on this string, not the user object,
-  // so it only re-runs when the actual uid changes (sign in/out)
-  // and never double-fires due to object reference changes.
+  const { user, workspaceId } = useAuth();
   const uid = user?.uid ?? "";
 
-  const [tasks, setTasks]             = useState<Task[]>([]);
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [notes, setNotes]             = useState<Note[]>([]);
-  const [projects, setProjects]       = useState<Project[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const resolvedRef                   = useRef(false);
+  const [tasks, setTasks]               = useState<Task[]>([]);
+  const [teamMembers, setTeamMembers]   = useState<TeamMember[]>([]);
+  const [notes, setNotes]               = useState<Note[]>([]);
+  const [projects, setProjects]         = useState<Project[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [members, setMembers]           = useState<WorkspaceMember[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [workspaceData, setWorkspaceData]   = useState<WorkspaceData | null>(null);
+  const resolvedRef                     = useRef(false);
 
+  // ── Core user data listeners ──────────────────────────────────────────────
   useEffect(() => {
-    // No user — clear everything immediately
     if (!uid) {
       setTasks([]);
       setTeamMembers([]);
@@ -95,7 +153,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Hard safety net — never spin longer than 5 seconds
     const timeout = setTimeout(() => {
       if (!resolvedRef.current) {
         resolvedRef.current = true;
@@ -122,7 +179,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         });
         setTasks(data);
         t = true;
-        console.log("[AppData] tasks:", data.length);
         tryResolve();
       },
       () => { t = true; tryResolve(); }
@@ -137,7 +193,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         } as TeamMember));
         setTeamMembers(data);
         m = true;
-        console.log("[AppData] teamMembers:", data.length);
         tryResolve();
       },
       () => { m = true; tryResolve(); }
@@ -152,7 +207,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         } as Note));
         setNotes(data);
         n = true;
-        console.log("[AppData] notes:", data.length);
         tryResolve();
       },
       () => { n = true; tryResolve(); }
@@ -161,7 +215,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const unsubProjects = subscribeToProjects(uid, (data) => {
       setProjects(data);
       p = true;
-      console.log("[AppData] projects:", data.length);
       tryResolve();
     });
 
@@ -173,11 +226,81 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       unsubNotes();
       unsubProjects();
     };
-  }, [uid]); // <-- uid string only, never user object
+  }, [uid]);
+
+  // ── Workspace team listeners (depends on workspaceId) ────────────────────
+  useEffect(() => {
+    if (!workspaceId) {
+      setMembers([]);
+      setPendingInvites([]);
+      setWorkspaceData(null);
+      return;
+    }
+
+    console.log("[AppData] 🔄 Attaching workspace listeners for:", workspaceId);
+
+    // Listen to workspace doc
+    const unsubWorkspace = onSnapshot(
+      doc(db, "workspaces", workspaceId),
+      (snap) => {
+        if (snap.exists()) {
+          setWorkspaceData({ id: snap.id, ...snap.data() } as WorkspaceData);
+        }
+      },
+      (err) => console.warn("[AppData] workspace doc error:", err.code)
+    );
+
+    // Listen to workspace members
+    const unsubWsMembers = onSnapshot(
+      collection(db, "workspaces", workspaceId, "members"),
+      (snap) => {
+        const data = snap.docs.map((d) => ({
+          ...d.data(),
+        } as WorkspaceMember));
+        setMembers(data);
+        console.log("[AppData] workspace members:", data.length);
+      },
+      (err) => console.warn("[AppData] members error:", err.code)
+    );
+
+    // Listen to pending invites
+    const unsubInvites = onSnapshot(
+      query(
+        collection(db, "workspaces", workspaceId, "invites"),
+        where("status", "==", "pending")
+      ),
+      (snap) => {
+        const data = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        } as PendingInvite));
+        setPendingInvites(data);
+        console.log("[AppData] pending invites:", data.length);
+      },
+      (err) => console.warn("[AppData] invites error:", err.code)
+    );
+
+    return () => {
+      unsubWorkspace();
+      unsubWsMembers();
+      unsubInvites();
+    };
+  }, [workspaceId]);
 
   return (
     <AppDataContext.Provider
-      value={{ tasks, teamMembers, notes, projects, loading, files: [] }}
+      value={{
+        tasks,
+        teamMembers,
+        notes,
+        projects,
+        loading,
+        files: [],
+        members,
+        pendingInvites,
+        memberCount: members.filter((m) => m.status === "active").length,
+        workspaceData,
+      }}
     >
       {children}
     </AppDataContext.Provider>
