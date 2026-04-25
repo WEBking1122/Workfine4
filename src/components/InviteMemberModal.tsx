@@ -95,7 +95,7 @@ export default function InviteMemberModal({
 
     try {
       const code       = generateInviteCode();
-      const inviteLink = `https://workfine.app/join/${code}`;
+      const inviteLink = `${window.location.origin}/join/${code}`;
       const expiresAt  = Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
       const payload = {
