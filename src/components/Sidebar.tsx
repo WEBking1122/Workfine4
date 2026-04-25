@@ -21,7 +21,6 @@ import { useAppData } from "../context/AppDataContext";
 import { deleteProject } from "../lib/firebase/projects";
 import { useNavigate } from "react-router-dom";
 import CreateProjectModal from "./CreateProjectModal";
-import logo from "../../fivicon.png";
 
 export default function Sidebar() {
   const { user, signOutUser } = useAuth();
@@ -162,7 +161,7 @@ function SidebarContent({
       {/* Logo */}
       <div className="p-6 flex items-center justify-between flex-shrink-0">
         <Link to="/" className="flex items-center gap-3">
-          <img src={logo} alt="Workfine Logo" className="w-8 h-8 object-contain rounded-lg shadow-lg shadow-indigo-500/20" />
+          <img src="/logo.png?v=2" alt="Workfine Logo" className="w-8 h-8 object-contain rounded-lg shadow-lg shadow-indigo-500/20" />
           <span className="text-2xl tracking-tight">
             <span className="font-extrabold text-white">Wurk</span>
             <span className="font-light text-white">fine</span>
