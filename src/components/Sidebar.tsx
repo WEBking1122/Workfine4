@@ -14,6 +14,7 @@ import {
   X,
   LogOut,
   Users,
+  Settings,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
@@ -43,6 +44,7 @@ export default function Sidebar() {
     { name: 'Calendar',  icon: Calendar,         path: '/calendar' },
     { name: 'My Tasks',  icon: CheckSquare,       path: '/my-tasks' },
     { name: 'Team',      icon: Users,             path: '/team' },
+    { name: 'Settings',  icon: Settings,          path: '/settings' },
   ];
 
   return (
