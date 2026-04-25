@@ -1,18 +1,21 @@
 import React, { useState } from "react";
 import emailjs from "@emailjs/browser";
 import {
-  collection, addDoc, doc, setDoc,
+  doc, setDoc,
   serverTimestamp, Timestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebase/config";
 import { useAuth } from "../context/AuthContext";
-import { Shield, User, Eye, X, CheckCircle, Copy, Check, AlertTriangle } from "lucide-react";
+import {
+  Shield, User, Eye, X, CheckCircle,
+  Copy, Check, AlertTriangle
+} from "lucide-react";
 
 // ── EmailJS credentials ──────────────────────────────────────────────────────
 const EJ_SERVICE  = "service_mexk2nq";
 const EJ_TEMPLATE = "template_tbhiftp";
 const EJ_KEY      = "meHwiauyfE3xFWE66";
-emailjs.init("meHwiauyfE3xFWE66");
+emailjs.init(EJ_KEY);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Props {
@@ -35,10 +38,38 @@ function isValidEmail(e: string): boolean {
 }
 
 // ── Role options ─────────────────────────────────────────────────────────────
-const ROLES: { id: RoleId; label: string; description: string; icon: any; color: string; bg: string }[] = [
-  { id: "admin",  label: "Admin",  description: "Can manage projects, tasks, and invite members", icon: Shield, color: "text-blue-600",    bg: "bg-blue-50"    },
-  { id: "member", label: "Member", description: "Can create and manage tasks and projects",       icon: User,   color: "text-emerald-600", bg: "bg-emerald-50" },
-  { id: "viewer", label: "Viewer", description: "Can view projects and tasks but cannot edit",    icon: Eye,    color: "text-orange-500",  bg: "bg-orange-50"  },
+const ROLES: {
+  id: RoleId;
+  label: string;
+  description: string;
+  icon: any;
+  color: string;
+  bg: string;
+}[] = [
+  {
+    id: "admin",
+    label: "Admin",
+    description: "Can manage projects, tasks, and invite members",
+    icon: Shield,
+    color: "text-blue-600",
+    bg: "bg-blue-50",
+  },
+  {
+    id: "member",
+    label: "Member",
+    description: "Can create and manage tasks and projects",
+    icon: User,
+    color: "text-emerald-600",
+    bg: "bg-emerald-50",
+  },
+  {
+    id: "viewer",
+    label: "Viewer",
+    description: "Can view projects and tasks but cannot edit",
+    icon: Eye,
+    color: "text-orange-500",
+    bg: "bg-orange-50",
+  },
 ];
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -64,7 +95,7 @@ export default function InviteMemberModal({
     emailFailed: boolean;
   } | null>(null);
 
-  // ── Copy helper ──────────────────────────────────────────────────────────────
+  // ── Copy helper ─────────────────────────────────────────────────────────────
   function copyLink(text: string) {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
@@ -72,7 +103,7 @@ export default function InviteMemberModal({
     });
   }
 
-  // ── Send invite ──────────────────────────────────────────────────────────────
+  // ── Send invite ─────────────────────────────────────────────────────────────
   async function handleSend() {
     setError("");
     const trimmed = email.trim().toLowerCase();
@@ -94,18 +125,19 @@ export default function InviteMemberModal({
     let emailFailed = false;
 
     try {
-      const code       = generateInviteCode();
+      const code      = generateInviteCode();
       const inviteLink = `${window.location.origin}/join/${code}`;
-      const expiresAt  = Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const expiresAt  = Timestamp.fromMillis(
+        Date.now() + 7 * 24 * 60 * 60 * 1000
+      );
 
       const payload = {
-        id:            code,
         code,
         email:         trimmed,
         workspaceId,
         workspaceName: workspaceName || "Workfine Workspace",
-        invitedBy:     user?.uid    ?? "",
-        invitedByName: user?.displayName ?? user?.email ?? "Someone",
+        invitedBy:     user?.uid          ?? "",
+        invitedByName: user?.displayName  ?? user?.email ?? "Someone",
         role,
         message:       message.trim(),
         status:        "pending",
@@ -113,36 +145,39 @@ export default function InviteMemberModal({
         expiresAt,
       };
 
-      // 1️⃣  Save to workspace invites sub-collection
-      await addDoc(collection(db, "workspaces", workspaceId, "invites"), payload)
-        .catch((e) => { throw new Error("Firestore workspace/invites: " + e.message); });
+      // ✅ PATH 1 — workspace subcollection
+      // Using setDoc + code as document ID so cancelInvite can find it
+      await setDoc(
+        doc(db, "workspaces", workspaceId, "invites", code),
+        payload
+      );
 
-      // 2️⃣  Save to global invites collection
-      await setDoc(doc(db, "invites", code), payload)
-        .catch((e) => { throw new Error("Firestore global/invites: " + e.message); });
+      // ✅ PATH 2 — global invites collection
+      // Using setDoc + code as document ID (same as before, already correct)
+      await setDoc(
+        doc(db, "invites", code),
+        payload
+      );
 
-      // 3️⃣  Send email via EmailJS
+      // ✅ PATH 3 — Send email via EmailJS
       try {
-        await emailjs.send(
-          EJ_SERVICE,
-          EJ_TEMPLATE,
-          {
-            to_email:       trimmed,
-            to_name:        trimmed,
-            from_name:      user?.displayName || user?.email || "Workfine",
-            workspace_name: workspaceName || "Workfine",
-            invite_link:    inviteLink,
-            invite_code:    code,
-            expires_in:     "7 days",
-            message:        message.trim() || "You have been invited to join our workspace.",
-          }
-        );
+        await emailjs.send(EJ_SERVICE, EJ_TEMPLATE, {
+          to_email:       trimmed,
+          to_name:        trimmed,
+          from_name:      user?.displayName || user?.email || "Workfine",
+          workspace_name: workspaceName || "Workfine",
+          invite_link:    inviteLink,
+          invite_code:    code,
+          expires_in:     "7 days",
+          message:        message.trim() || "You have been invited to join our workspace.",
+        });
       } catch (ejErr: any) {
         console.error("[InviteModal] EmailJS failed:", ejErr);
         emailFailed = true;
       }
 
       setSuccess({ code, email: trimmed, emailFailed });
+
     } catch (err: any) {
       console.error("[InviteModal] Invite error:", err);
       setError("Failed to send invitation. Please try again.");
@@ -151,9 +186,11 @@ export default function InviteMemberModal({
     }
   }
 
-  const inviteLink = success ? `https://workfine.app/join/${success.code}` : "";
+  const inviteLink = success
+    ? `${window.location.origin}/join/${success.code}`
+    : "";
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div
@@ -163,41 +200,67 @@ export default function InviteMemberModal({
         {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Invite Team Member</h2>
-            <p className="text-sm text-slate-400 mt-0.5">Send an invitation to join your workspace</p>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Invite Team Member
+            </h2>
+            <p className="text-sm text-slate-400 mt-0.5">
+              Send an invitation to join your workspace
+            </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors mt-0.5">
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 transition-colors mt-0.5"
+          >
             <X size={20} />
           </button>
         </div>
 
         <div className="px-6 py-5">
-          {/* ── Success ── */}
+
+          {/* ── Success screen ── */}
           {success ? (
             <div className="text-center py-2">
-              <div className={`w-14 h-14 ${success.emailFailed ? "bg-amber-100" : "bg-emerald-100"} rounded-full flex items-center justify-center mx-auto mb-4`}>
-                {success.emailFailed
-                  ? <AlertTriangle className="text-amber-500" size={26} />
-                  : <CheckCircle   className="text-emerald-600" size={26} />}
+              <div
+                className={`w-14 h-14 ${
+                  success.emailFailed ? "bg-amber-100" : "bg-emerald-100"
+                } rounded-full flex items-center justify-center mx-auto mb-4`}
+              >
+                {success.emailFailed ? (
+                  <AlertTriangle className="text-amber-500" size={26} />
+                ) : (
+                  <CheckCircle className="text-emerald-600" size={26} />
+                )}
               </div>
 
               <p className="text-base font-semibold text-slate-800 mb-1">
                 {success.emailFailed ? "Invite created!" : "Invite sent!"}
               </p>
               <p className="text-sm text-slate-500 mb-4">
-                {success.emailFailed
-                  ? <span className="text-amber-600 text-xs font-medium">Email delivery failed — share this link manually</span>
-                  : <>Invitation sent to <span className="font-medium text-slate-700">{success.email}</span></>
-                }
+                {success.emailFailed ? (
+                  <span className="text-amber-600 text-xs font-medium">
+                    Email delivery failed — share this link manually
+                  </span>
+                ) : (
+                  <>
+                    Invitation sent to{" "}
+                    <span className="font-medium text-slate-700">
+                      {success.email}
+                    </span>
+                  </>
+                )}
               </p>
 
               <div className="bg-slate-50 rounded-xl p-4 mb-3">
                 <p className="text-xs text-slate-400 mb-1">Invite code</p>
-                <p className="font-mono text-xl font-bold tracking-widest text-violet-700">{success.code}</p>
+                <p className="font-mono text-xl font-bold tracking-widest text-violet-700">
+                  {success.code}
+                </p>
               </div>
 
               <div className="flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-2.5 mb-4">
-                <span className="text-xs text-slate-500 truncate flex-1">{inviteLink}</span>
+                <span className="text-xs text-slate-500 truncate flex-1">
+                  {inviteLink}
+                </span>
                 <button
                   onClick={() => copyLink(inviteLink)}
                   className="flex items-center gap-1 text-xs text-violet-600 font-semibold flex-shrink-0"
@@ -209,7 +272,12 @@ export default function InviteMemberModal({
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setSuccess(null); setEmail(""); setMessage(""); setError(""); }}
+                  onClick={() => {
+                    setSuccess(null);
+                    setEmail("");
+                    setMessage("");
+                    setError("");
+                  }}
                   className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors"
                 >
                   Send Another
@@ -224,6 +292,7 @@ export default function InviteMemberModal({
             </div>
 
           ) : (
+
             /* ── Form ── */
             <div className="space-y-5">
               <div>
@@ -235,33 +304,46 @@ export default function InviteMemberModal({
                   placeholder="colleague@company.com"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setError(""); }}
-                  className={`w-full border rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all ${
+                  className={`w-full border rounded-xl px-4 py-2.5 text-sm text-slate-700
+                    focus:outline-none focus:ring-2 focus:ring-violet-500 transition-all ${
                     error ? "border-red-400 bg-red-50" : "border-slate-200"
                   }`}
                 />
-                {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
+                {error && (
+                  <p className="text-xs text-red-500 mt-1.5">{error}</p>
+                )}
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-2">Assign Role</label>
+                <label className="text-xs font-semibold text-slate-600 block mb-2">
+                  Assign Role
+                </label>
                 <div className="space-y-2">
                   {ROLES.map((r) => (
                     <button
                       key={r.id}
                       type="button"
                       onClick={() => setRole(r.id)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2
+                        text-left transition-all ${
                         role === r.id
                           ? "border-violet-500 bg-violet-50"
                           : "border-slate-200 hover:border-slate-300"
                       }`}
                     >
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${r.bg} flex-shrink-0`}>
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center
+                          ${r.bg} flex-shrink-0`}
+                      >
                         <r.icon size={15} className={r.color} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-800">{r.label}</p>
-                        <p className="text-xs text-slate-400 leading-tight">{r.description}</p>
+                        <p className="text-sm font-semibold text-slate-800">
+                          {r.label}
+                        </p>
+                        <p className="text-xs text-slate-400 leading-tight">
+                          {r.description}
+                        </p>
                       </div>
                       {role === r.id && (
                         <div className="w-4 h-4 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0">
@@ -275,22 +357,30 @@ export default function InviteMemberModal({
 
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1.5">
-                  Personal Message <span className="font-normal text-slate-400">(optional)</span>
+                  Personal Message{" "}
+                  <span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <textarea
                   placeholder="Add a personal message to your invitation..."
                   value={message}
                   onChange={(e) => setMessage(e.target.value.slice(0, 200))}
                   rows={2}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5
+                    text-sm text-slate-700 focus:outline-none focus:ring-2
+                    focus:ring-violet-500 resize-none"
                 />
-                <p className="text-xs text-slate-400 text-right mt-0.5">{message.length}/200</p>
+                <p className="text-xs text-slate-400 text-right mt-0.5">
+                  {message.length}/200
+                </p>
               </div>
 
               <button
                 onClick={handleSend}
                 disabled={sending || !email.trim()}
-                className="w-full py-3 bg-violet-600 text-white rounded-xl text-sm font-semibold hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-3 bg-violet-600 text-white rounded-xl text-sm
+                  font-semibold hover:bg-violet-700 transition-colors
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  flex items-center justify-center gap-2"
               >
                 {sending ? (
                   <>

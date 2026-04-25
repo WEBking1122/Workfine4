@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  doc, getDoc, updateDoc, setDoc, serverTimestamp,
+  doc, getDoc, updateDoc, setDoc, serverTimestamp, writeBatch,
 } from "firebase/firestore";
 import { db } from "../lib/firebase/config";
 import { useAuth } from "../context/AuthContext";
@@ -17,15 +17,15 @@ function avatarColor(uid: string) {
 type PageState = "loading" | "invalid" | "used" | "valid" | "joining" | "done";
 
 export default function JoinWorkspacePage() {
-  const { inviteCode }                      = useParams<{ inviteCode: string }>();
-  const { user, loading: authLoading }      = useAuth();
-  const navigate                            = useNavigate();
+  const { inviteCode }                 = useParams<{ inviteCode: string }>();
+  const { user, loading: authLoading, setWorkspaceId } = useAuth();
+  const navigate                       = useNavigate();
 
   const [pageState, setPageState] = useState<PageState>("loading");
   const [invite,    setInvite]    = useState<any>(null);
   const [joinError, setJoinError] = useState("");
 
-  // ── 1. Fetch invite ────────────────────────────────────────────────────────
+  // ── 1. Fetch & validate invite ─────────────────────────────────────────────
   useEffect(() => {
     if (authLoading || !inviteCode) return;
 
@@ -33,28 +33,20 @@ export default function JoinWorkspacePage() {
       try {
         const snap = await getDoc(doc(db, "invites", inviteCode!));
 
-        if (!snap.exists()) {
-          setPageState("invalid");
-          return;
-        }
+        if (!snap.exists()) { setPageState("invalid"); return; }
 
         const data = { id: snap.id, ...snap.data() } as any;
 
         // Check expiry
         if (data.expiresAt) {
-          const expMs = typeof data.expiresAt?.toMillis === "function"
-            ? data.expiresAt.toMillis()
-            : (data.expiresAt.seconds ?? 0) * 1000;
-          if (expMs < Date.now()) {
-            setPageState("invalid");
-            return;
-          }
+          const expMs =
+            typeof data.expiresAt?.toMillis === "function"
+              ? data.expiresAt.toMillis()
+              : (data.expiresAt.seconds ?? 0) * 1000;
+          if (expMs < Date.now()) { setPageState("invalid"); return; }
         }
 
-        if (data.status !== "pending") {
-          setPageState("used");
-          return;
-        }
+        if (data.status !== "pending") { setPageState("used"); return; }
 
         setInvite(data);
         setPageState("valid");
@@ -77,14 +69,17 @@ export default function JoinWorkspacePage() {
       const { workspaceId, role } = invite;
       const uid = user.uid;
 
-      // Add user to workspace members
-      await setDoc(doc(db, "workspaces", workspaceId, "members", uid), {
+      const batch = writeBatch(db);
+
+      // ✅ STEP 1 — Add user to workspace members subcollection
+      const memberRef = doc(db, "workspaces", workspaceId, "members", uid);
+      batch.set(memberRef, {
         userId:      uid,
         email:       user.email ?? "",
         displayName: user.displayName ?? user.email?.split("@")[0] ?? "Member",
         avatar:      (user.displayName ?? user.email ?? "M")[0].toUpperCase(),
         avatarColor: avatarColor(uid),
-        role:        role ?? "member",
+        role:        role ?? "member",   // ← use invited role, never "owner"
         status:      "active",
         joinedAt:    serverTimestamp(),
         invitedBy:   invite.invitedBy ?? "",
@@ -97,33 +92,54 @@ export default function JoinWorkspacePage() {
         },
       });
 
-      // Mark global invite as accepted
-      await updateDoc(doc(db, "invites", inviteCode!), {
+      // ✅ STEP 2 — Mark GLOBAL invite as accepted
+      // Path: invites/{inviteCode}
+      const globalRef = doc(db, "invites", inviteCode!);
+      batch.update(globalRef, {
         status:     "accepted",
         acceptedAt: serverTimestamp(),
       });
 
-      // Try to mark workspace invite too (best-effort)
-      try {
-        const { collection: col, query: q, where, getDocs } = await import("firebase/firestore");
-        const wsInvQ = q(
-          col(db, "workspaces", workspaceId, "invites"),
-          where("inviteCode", "==", inviteCode)
-        );
-        const wsSnap = await getDocs(wsInvQ);
-        wsSnap.docs.forEach((d) =>
-          updateDoc(d.ref, { status: "accepted", acceptedAt: serverTimestamp() })
-        );
-      } catch { /* non-critical */ }
+      // ✅ STEP 3 — Mark WORKSPACE SUBCOLLECTION invite as accepted
+      // Path: workspaces/{workspaceId}/invites/{inviteCode}
+      // This is what AppDataContext onSnapshot watches →
+      // sender's Pending Invites list updates in real time instantly
+      const wsInviteRef = doc(
+        db, "workspaces", workspaceId, "invites", inviteCode!
+      );
+      batch.update(wsInviteRef, {
+        status:     "accepted",
+        acceptedAt: serverTimestamp(),
+      });
 
-      // Update user doc workspaceId if different
-      await updateDoc(doc(db, "users", uid), {
-        workspaceId,
-        updatedAt: serverTimestamp(),
-      }).catch(() => {});
+      // ✅ STEP 4 — Update user doc with the SENDER's workspaceId
+      // This is critical — must use WF-354 (sender's) NOT a new workspace
+      const userRef = doc(db, "users", uid);
+      batch.set(userRef, {
+        uid,
+        email:       user.email ?? "",
+        displayName: user.displayName ?? user.email?.split("@")[0] ?? "Member",
+        photoURL:    user.photoURL ?? "",
+        plan:        "free",
+        workspaceId, // ← WF-354 (sender's workspace), not a new one
+        updatedAt:   serverTimestamp(),
+      }, { merge: true });
 
+      // ✅ Commit all 4 operations atomically
+      await batch.commit();
+      console.log("[JoinPage] ✅ batch.commit() succeeded");
+
+      // ✅ STEP 5 — Update AuthContext workspaceId in memory immediately
+      // So the dashboard loads WF-354 instantly without a page refresh
+      setWorkspaceId(workspaceId);
+
+      // ✅ STEP 6 — Clear the pending invite code from localStorage
+      localStorage.removeItem("pendingInviteCode");
+
+      console.log("[JoinPage] ✅ Joined workspace:", workspaceId, "as:", role);
       setPageState("done");
       setTimeout(() => navigate("/"), 1600);
+
     } catch (e: any) {
       console.error("[JoinPage] accept error:", e);
       setJoinError("Failed to join workspace. Please try again.");
@@ -136,7 +152,7 @@ export default function JoinWorkspacePage() {
     navigate(path);
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-violet-600 to-violet-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md">
@@ -243,7 +259,6 @@ export default function JoinWorkspacePage() {
                 </button>
               </div>
             ) : (
-              /* Signed in — accept */
               <button
                 onClick={acceptInvite}
                 disabled={pageState === "joining"}
@@ -275,7 +290,6 @@ export default function JoinWorkspacePage() {
   );
 }
 
-// ── Small helper component ────────────────────────────────────────────────────
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex justify-between items-center text-sm">
